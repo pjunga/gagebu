@@ -7,7 +7,7 @@ service cloud.firestore {
     function isAllowedGoogleUser() {
       return request.auth != null
         && request.auth.token.firebase.sign_in_provider == "google.com"
-        && request.auth.token.email == "you@gmail.com";
+        && request.auth.token.email == "pjunga0730@gmail.com";
     }
 
     function isOwner(userId) {

@@ -1,9 +1,4 @@
 import {
-  browserLocalPersistence,
-  setPersistence,
-  signInAnonymously,
-} from "firebase/auth";
-import {
   collection,
   deleteDoc,
   doc,
@@ -16,7 +11,12 @@ import {
   writeBatch,
   type DocumentData,
 } from "firebase/firestore";
-import { auth, db, isFirebaseConfigured } from "./firebase";
+import {
+  auth,
+  db,
+  isAllowedFirebaseUser,
+  isFirebaseConfigured,
+} from "./firebase";
 import {
   ENTITY_COLLECTIONS,
   type BaseEntity,
@@ -67,15 +67,14 @@ async function getUserId(): Promise<string> {
       operation: "authenticate",
     });
   }
-  try {
-    await setPersistence(auth, browserLocalPersistence);
-    return (auth.currentUser ?? (await signInAnonymously(auth)).user).uid;
-  } catch (error) {
-    throw new RepositoryError(
-      "Firebase 인증에 실패했습니다. 익명 로그인을 활성화했는지 확인해주세요.",
-      { code: "firebase/auth-failed", operation: "authenticate", cause: error },
-    );
+  const user = auth.currentUser;
+  if (!user || !isAllowedFirebaseUser(user)) {
+    throw new RepositoryError("허용된 Google 계정으로 로그인해주세요.", {
+      code: "firebase/auth-required",
+      operation: "authenticate",
+    });
   }
+  return user.uid;
 }
 
 function removeUndefined(value: unknown): unknown {

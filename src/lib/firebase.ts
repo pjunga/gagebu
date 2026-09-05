@@ -1,5 +1,5 @@
 import { getApp, getApps, initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+import { getAuth, type User } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -26,3 +26,14 @@ const app = isFirebaseConfigured
 
 export const auth = app ? getAuth(app) : null;
 export const db = app ? getFirestore(app) : null;
+
+export const allowedGoogleEmail =
+  process.env.NEXT_PUBLIC_ALLOWED_GOOGLE_EMAIL?.trim().toLowerCase() ?? "";
+
+export function isAllowedFirebaseUser(user: User | null): boolean {
+  if (!user || !allowedGoogleEmail) return false;
+  const usesGoogle = user.providerData.some(
+    (provider) => provider.providerId === "google.com",
+  );
+  return usesGoogle && user.email?.trim().toLowerCase() === allowedGoogleEmail;
+}
