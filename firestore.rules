@@ -1,0 +1,314 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Replace the email below with the same address configured in
+    // NEXT_PUBLIC_ALLOWED_GOOGLE_EMAIL before deploying these rules.
+    function isAllowedGoogleUser() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider == "google.com"
+        && request.auth.token.email == "you@gmail.com";
+    }
+
+    function isOwner(userId) {
+      return isAllowedGoogleUser() && request.auth.uid == userId;
+    }
+
+    function isBoundedString(value, maximum) {
+      return value is string && value.size() <= maximum;
+    }
+
+    function isNonEmptyString(value, maximum) {
+      return isBoundedString(value, maximum) && value.size() > 0;
+    }
+
+    function optionalString(data, key, maximum) {
+      return !(key in data) || isBoundedString(data[key], maximum);
+    }
+
+    function optionalNonEmptyString(data, key, maximum) {
+      return !(key in data) || isNonEmptyString(data[key], maximum);
+    }
+
+    // Firestore numbers do not expose an isFinite() rule helper. A bounded
+    // comparison rejects NaN and infinities as well as impractical values.
+    function isMoney(value) {
+      return value is number && value >= 0 && value <= 1000000000000;
+    }
+
+    function isCount(value) {
+      return value is number && value >= 0 && value <= 1000000;
+    }
+
+    function isRate(value) {
+      return value is number && value >= 0 && value <= 100;
+    }
+
+    function optionalMoney(data, key) {
+      return !(key in data) || isMoney(data[key]);
+    }
+
+    function optionalRate(data, key) {
+      return !(key in data) || isRate(data[key]);
+    }
+
+    function isDateText(value) {
+      return isNonEmptyString(value, 64)
+        && value.matches("^[0-9]{4}[-/.][0-9]{1,2}([-/.][0-9]{1,2})?([T ][0-9A-Za-z: +.-]+)?$");
+    }
+
+    function isMonthText(value) {
+      return isNonEmptyString(value, 20)
+        && value.matches("^[0-9]{4}[-/.][0-9]{1,2}$");
+    }
+
+    function isTimestampOrDateText(value) {
+      return value is timestamp || isDateText(value);
+    }
+
+    function optionalDate(data, key) {
+      return !(key in data) || isDateText(data[key]);
+    }
+
+    function validSource(value) {
+      return value == "manual" || value == "legacy" || value == "import";
+    }
+
+    function validTransactionType(value) {
+      return value == "income"
+        || value == "expense"
+        || value == "수입"
+        || value == "지출";
+    }
+
+    function validIncomeSource(value) {
+      // The final domain model stores the English enum. The Korean aliases
+      // are accepted only for old documents and are normalized on next write.
+      return value == "salary"
+        || value == "side-income"
+        || value == "sideincome"
+        || value == "other"
+        || value == "급여"
+        || value == "부수입";
+    }
+
+    function validAssetType(value) {
+      return value == "deposit" || value == "savings";
+    }
+
+    function validOrderSide(value) {
+      return value == "buy" || value == "sell";
+    }
+
+    function validWorkStatus(value) {
+      // todo/done/cancelled are retained for old local/Firebase records.
+      return value == "planned"
+        || value == "in-progress"
+        || value == "completed"
+        || value == "sent"
+        || value == "paid"
+        || value == "todo"
+        || value == "done"
+        || value == "cancelled";
+    }
+
+    function validPriority(value) {
+      return value == "low"
+        || value == "normal"
+        || value == "high"
+        || value == "urgent";
+    }
+
+    function validImportMetadata(value) {
+      return value is map
+        && value.keys().hasOnly(["sheet", "row", "column"])
+        && "sheet" in value
+        && isNonEmptyString(value["sheet"], 100)
+        && (!("row" in value)
+          || (value["row"] is number && value["row"] >= 0 && value["row"] <= 100000000))
+        && (!("column" in value) || isBoundedString(value["column"], 20));
+    }
+
+    function validMetadata(data) {
+      return (!("createdAt" in data) || isTimestampOrDateText(data["createdAt"]))
+        && (!("updatedAt" in data) || isTimestampOrDateText(data["updatedAt"]))
+        && (!("source" in data) || validSource(data["source"]))
+        && optionalString(data, "fingerprint", 256)
+        && (!("import" in data) || validImportMetadata(data["import"]));
+    }
+
+    // Transactions originally lived in gagebu:transactions and older Firebase
+    // documents can omit id/category/memo or use kind/description/date aliases.
+    // Keep that shape writable while validating every field that is present.
+    function validLegacyCompatibleId(data, documentId) {
+      return !("id" in data)
+        || (isNonEmptyString(data["id"], 200) && data["id"] == documentId);
+    }
+
+    function validIncomeDetails(value) {
+      return value is map
+        && value.keys().hasOnly([
+          "source", "employer", "payer", "sourceName", "count",
+          "grossAmount", "netAmount", "taxAmount", "paymentDate", "month",
+          "recurring", "note", "workItemId"
+        ])
+        && "source" in value
+        && validIncomeSource(value["source"])
+        && (!("employer" in value) || isBoundedString(value["employer"], 200))
+        && (!("payer" in value) || isBoundedString(value["payer"], 200))
+        && (!("sourceName" in value) || isBoundedString(value["sourceName"], 200))
+        && (!("count" in value) || isCount(value["count"]))
+        && (!("grossAmount" in value) || isMoney(value["grossAmount"]))
+        && (!("netAmount" in value) || isMoney(value["netAmount"]))
+        && (!("taxAmount" in value) || isMoney(value["taxAmount"]))
+        // The UI historically used this field for an account/label. Keep it
+        // a bounded string; date fields are validated separately below.
+        && (!("paymentDate" in value) || isBoundedString(value["paymentDate"], 100))
+        && (!("month" in value) || isMonthText(value["month"]))
+        && (!("recurring" in value) || value["recurring"] is bool)
+        && (!("note" in value) || isBoundedString(value["note"], 1000))
+        && (!("workItemId" in value) || isNonEmptyString(value["workItemId"], 200));
+    }
+
+    function validTransaction(data, documentId) {
+      return data.keys().hasOnly([
+          "id", "createdAt", "updatedAt", "source", "fingerprint", "import",
+          "type", "kind", "category", "amount", "memo", "description", "date",
+          "occurredAt", "paymentDate", "incomeDetails", "incomeDetail", "details",
+          "workItemId"
+        ])
+        && validMetadata(data)
+        && validLegacyCompatibleId(data, documentId)
+        && (("type" in data && validTransactionType(data["type"]))
+          || ("kind" in data && validTransactionType(data["kind"])))
+        && "amount" in data
+        && isMoney(data["amount"])
+        && (("date" in data && isDateText(data["date"]))
+          || (!("date" in data) && "paymentDate" in data && isDateText(data["paymentDate"]))
+          || (!("date" in data) && !("paymentDate" in data)
+            && "occurredAt" in data && isDateText(data["occurredAt"])))
+        && optionalString(data, "category", 200)
+        && optionalString(data, "memo", 1000)
+        && optionalString(data, "description", 1000)
+        && optionalDate(data, "occurredAt")
+        && optionalString(data, "paymentDate", 100)
+        && (!("incomeDetails" in data) || validIncomeDetails(data["incomeDetails"]))
+        && (!("incomeDetail" in data) || validIncomeDetails(data["incomeDetail"]))
+        && (!("details" in data) || validIncomeDetails(data["details"]))
+        && optionalNonEmptyString(data, "workItemId", 200);
+    }
+
+    function validSavingsAccount(data, documentId) {
+      return data.keys().hasOnly([
+          "id", "createdAt", "updatedAt", "source", "fingerprint", "import",
+          "institution", "accountName", "assetType", "principal", "balance",
+          "monthlyContribution", "interestRate", "interestAmount", "startDate",
+          "maturityDate", "memo"
+        ])
+        && validMetadata(data)
+        && "id" in data
+        && isNonEmptyString(data["id"], 200)
+        && data["id"] == documentId
+        && "institution" in data
+        && isNonEmptyString(data["institution"], 200)
+        && "accountName" in data
+        && isNonEmptyString(data["accountName"], 200)
+        && (!("assetType" in data) || validAssetType(data["assetType"]))
+        && optionalMoney(data, "principal")
+        && optionalMoney(data, "balance")
+        && optionalMoney(data, "monthlyContribution")
+        && optionalRate(data, "interestRate")
+        && optionalMoney(data, "interestAmount")
+        && optionalDate(data, "startDate")
+        && optionalDate(data, "maturityDate")
+        && optionalString(data, "memo", 1000);
+    }
+
+    function validStockOrder(data, documentId) {
+      return data.keys().hasOnly([
+          "id", "createdAt", "updatedAt", "source", "fingerprint", "import",
+          "broker", "ticker", "name", "side", "quantity", "unitPrice",
+          "totalAmount", "principalOrBalance", "orderDate", "fee", "currency",
+          "memo"
+        ])
+        && validMetadata(data)
+        && "id" in data
+        && isNonEmptyString(data["id"], 200)
+        && data["id"] == documentId
+        && optionalString(data, "broker", 200)
+        && "ticker" in data
+        && isNonEmptyString(data["ticker"], 50)
+        && optionalString(data, "name", 200)
+        && "side" in data
+        && validOrderSide(data["side"])
+        && "quantity" in data
+        && isMoney(data["quantity"])
+        && "unitPrice" in data
+        && isMoney(data["unitPrice"])
+        && "totalAmount" in data
+        && isMoney(data["totalAmount"])
+        && optionalMoney(data, "principalOrBalance")
+        && "orderDate" in data
+        && isDateText(data["orderDate"])
+        && optionalMoney(data, "fee")
+        && optionalString(data, "currency", 12)
+        && optionalString(data, "memo", 1000);
+    }
+
+    function validWorkItem(data, documentId) {
+      return data.keys().hasOnly([
+          "id", "createdAt", "updatedAt", "source", "fingerprint", "import",
+          "title", "workDate", "course", "courseNumber", "session",
+          "clientOrSchool", "amount", "description", "status", "priority",
+          "dueDate", "sentAt", "completedAt", "sideIncomeTransactionId",
+          "tags", "memo"
+        ])
+        && validMetadata(data)
+        && "id" in data
+        && isNonEmptyString(data["id"], 200)
+        && data["id"] == documentId
+        && "title" in data
+        && isNonEmptyString(data["title"], 300)
+        && optionalDate(data, "workDate")
+        && optionalString(data, "course", 200)
+        && optionalString(data, "courseNumber", 100)
+        && optionalString(data, "session", 100)
+        && optionalString(data, "clientOrSchool", 200)
+        && optionalMoney(data, "amount")
+        && optionalString(data, "description", 2000)
+        && "status" in data
+        && validWorkStatus(data["status"])
+        && (!("priority" in data) || validPriority(data["priority"]))
+        && optionalDate(data, "dueDate")
+        && optionalDate(data, "sentAt")
+        && optionalDate(data, "completedAt")
+        && optionalNonEmptyString(data, "sideIncomeTransactionId", 200)
+        && (!("tags" in data) || (data["tags"] is list && data["tags"].size() <= 50))
+        && optionalString(data, "memo", 1000);
+    }
+
+    match /users/{userId}/transactions/{transactionId} {
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+        && validTransaction(request.resource.data, transactionId);
+    }
+
+    match /users/{userId}/savingsAccounts/{accountId} {
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+        && validSavingsAccount(request.resource.data, accountId);
+    }
+
+    match /users/{userId}/stockOrders/{orderId} {
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+        && validStockOrder(request.resource.data, orderId);
+    }
+
+    match /users/{userId}/workItems/{workItemId} {
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+        && validWorkItem(request.resource.data, workItemId);
+    }
+  }
+}

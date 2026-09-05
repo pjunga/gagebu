@@ -1,4 +1,22 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# 가계부
+
+Next.js와 Firebase로 만든 간단한 가계부입니다. Firebase 환경변수가 없으면 브라우저 로컬 저장소를 사용하고, 설정하면 익명 인증된 사용자별 Firestore 저장소를 사용합니다.
+
+## Firebase 설정
+
+1. Firebase Console에서 프로젝트와 Web App을 만듭니다.
+2. Authentication에서 익명 로그인(Anonymous)을 활성화합니다.
+3. Firestore Database를 생성합니다.
+4. `.env.local.example`을 `.env.local`로 복사하고 Web App 설정값을 입력합니다.
+5. Firebase CLI로 `firestore.rules`를 배포합니다.
+
+```bash
+firebase login
+firebase use --add
+firebase deploy --only firestore:rules
+```
+
+기존 브라우저 로컬 데이터는 Firebase 연결 후 현재 익명 사용자 계정으로 최초 1회 자동 이전됩니다.
 
 ## Getting Started
 
