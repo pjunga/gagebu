@@ -115,11 +115,9 @@ service cloud.firestore {
         || value == "cancelled";
     }
 
+    // Categories are user-managed, so any short non-empty name is accepted.
     function validWorkCategory(value) {
-      return value == "교수설계"
-        || value == "위시스프링"
-        || value == "레미제라블"
-        || value == "그외";
+      return isNonEmptyString(value, 60);
     }
 
     function validPriority(value) {
@@ -265,6 +263,20 @@ service cloud.firestore {
         && optionalString(data, "memo", 1000);
     }
 
+    function validWorkCategoryDoc(data, documentId) {
+      return data.keys().hasOnly([
+          "id", "createdAt", "updatedAt", "source", "fingerprint", "import",
+          "name", "order"
+        ])
+        && validMetadata(data)
+        && "id" in data
+        && isNonEmptyString(data["id"], 200)
+        && data["id"] == documentId
+        && "name" in data
+        && validWorkCategory(data["name"])
+        && (!("order" in data) || isCount(data["order"]));
+    }
+
     function validWorkItem(data, documentId) {
       return data.keys().hasOnly([
           "id", "createdAt", "updatedAt", "source", "fingerprint", "import",
@@ -320,6 +332,12 @@ service cloud.firestore {
       allow read, delete: if isOwner(userId);
       allow create, update: if isOwner(userId)
         && validWorkItem(request.resource.data, workItemId);
+    }
+
+    match /users/{userId}/workCategories/{categoryId} {
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+        && validWorkCategoryDoc(request.resource.data, categoryId);
     }
   }
 }
