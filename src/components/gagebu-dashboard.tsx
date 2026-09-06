@@ -576,7 +576,9 @@ function EntryModal({
     setDraft(initial);
     setValidationError("");
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [initial, onClose, open]);
+    // onClose is deliberately not a dependency: the parent passes a new arrow on
+    // every render, and re-running this would throw away what the user typed.
+  }, [initial, open]);
 
   if (!open) return null;
 
@@ -1002,14 +1004,13 @@ type ImportPreview = XlsxImportPreview & {
   fileName: string;
 };
 
+/** Mounted only while open, so each import starts from a clean wizard. */
 function ImportModal({
-  open,
   saving,
   onClose,
   onImport,
   existingFingerprints = [],
 }: {
-  open: boolean;
   saving: boolean;
   onClose: () => void;
   onImport: (file: File, preview: ImportPreview) => Promise<string | null>;
@@ -1022,29 +1023,8 @@ function ImportModal({
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState("");
-
-  useEffect(() => {
-    if (!open) return;
-    /* eslint-disable react-hooks/set-state-in-effect -- reset the import wizard for each open */
-    setStage("select");
-    setFile(null);
-    setPreview(null);
-    setConfirmed(false);
-    setError("");
-    /* eslint-enable react-hooks/set-state-in-effect */
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = previous;
-    };
-  }, [onClose, open]);
-
-  if (!open) return null;
+  const pickRef = useRef(0);
+  const dialogRef = useDialogFocus(true, onClose);
 
   const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const selected = event.target.files?.[0];
@@ -1057,33 +1037,48 @@ function ImportModal({
       return;
     }
     setError("");
+    // A slow parse must not overwrite a file the user picked after it.
+    const pick = pickRef.current + 1;
+    pickRef.current = pick;
     try {
       const parsed = await previewXlsxImport(selected, { existingFingerprints });
+      if (pick !== pickRef.current) return;
       setFile(selected);
       setPreview({ ...parsed, fileName: selected.name });
+      setError("");
       setStage("preview");
     } catch (reason: unknown) {
+      if (pick !== pickRef.current) return;
       setError(reason instanceof Error ? reason.message : "엑셀 파일을 읽지 못했습니다.");
     }
   };
 
+  const handleConfirm = async () => {
+    if (!file || !preview) return;
+    setError("");
+    const message = await onImport(file, preview);
+    if (message) setError(message);
+  };
+
   const backToSelect = () => {
+    pickRef.current += 1;
     setStage("select");
     setFile(null);
     setPreview(null);
     setConfirmed(false);
+    setError("");
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-scrim p-0 backdrop-blur-sm sm:items-center sm:p-6">
-      <div role="dialog" aria-modal="true" aria-labelledby="import-dialog-title" className="w-full max-w-xl overflow-hidden rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:rounded-3xl">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="import-dialog-title" className="w-full max-w-xl overflow-hidden rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:rounded-3xl">
         <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-5 sm:px-7">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-300/80">데이터 가져오기</p>
             <h2 id="import-dialog-title" className="mt-1 text-xl font-semibold tracking-tight text-ink">엑셀 내역 불러오기</h2>
             <p className="mt-1 text-xs text-faint">파일은 이 기기에서 미리보기한 뒤 확인 후 저장합니다.</p>
           </div>
-          <button type="button" onClick={onClose} aria-label="가져오기 닫기" className="rounded-2xl p-2 text-muted transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="close" size={20} /></button>
+          <button type="button" onClick={onClose} disabled={saving} aria-label="가져오기 닫기" className="rounded-2xl p-2 text-muted transition hover:bg-card-strong hover:text-ink disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="close" size={20} /></button>
         </div>
 
         <div className="px-5 py-5 sm:px-7 sm:py-6">
@@ -1127,9 +1122,10 @@ function ImportModal({
                 <span className="text-xs leading-5 text-amber-100/80">미리보기 결과를 확인했으며, 인식된 내역을 저장하겠습니다. 중복·건너뛸 행은 저장 대상에서 제외됩니다.</span>
               </label>
               {error && <p role="alert" className="mt-3 text-xs text-rose-200">{error}</p>}
+              {saving && <p className="mt-3 text-xs text-faint">저장 중입니다. 완료된 뒤에 닫을 수 있어요.</p>}
               <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <button type="button" onClick={onClose} disabled={saving} className="h-11 rounded-2xl px-5 text-sm font-medium text-muted transition hover:bg-card-strong hover:text-ink disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">취소</button>
-                <button type="button" disabled={!confirmed || !file || saving} onClick={async () => { if (!file) return; setError(""); const message = await onImport(file, preview); if (message) setError(message); }} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200">{saving ? <Icon name="refresh" size={16} className="animate-spin" /> : <Icon name="upload" size={16} />} 확인 후 저장</button>
+                <button type="button" disabled={!confirmed || !file || saving} onClick={handleConfirm} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200">{saving ? <Icon name="refresh" size={16} className="animate-spin" /> : <Icon name="upload" size={16} />} 확인 후 저장</button>
               </div>
             </div>
           )}
@@ -1857,7 +1853,9 @@ export default function GagebuDashboard() {
     }
   };
 
-  const closeImport = useCallback(() => setImportOpen((open) => (savingRef.current ? open : false)), []);
+  const closeImport = useCallback(() => {
+    if (!savingRef.current) setImportOpen(false);
+  }, []);
 
   /** Reports the failure back to the modal instead of closing it, so a retry
    *  keeps the preview the user already confirmed. */
@@ -1867,6 +1865,7 @@ export default function GagebuDashboard() {
     try {
       const result = await importXlsxFile(file, repositories, { existingFingerprints });
       const savedTotal = Object.values(result.saved).reduce((sum, value) => sum + value, 0);
+      setError("");
       setImportOpen(false);
       setToast(
         savedTotal
@@ -2007,7 +2006,7 @@ export default function GagebuDashboard() {
       <DetailModal record={detailRecord} onClose={() => setDetailRecord(null)} onEdit={openEdit} onDelete={(record) => setDeleteRecord(record)} />
       <DeleteDialog record={deleteRecord} onClose={() => setDeleteRecord(null)} onConfirm={handleDeleteConfirm} />
       <EntryModal open={entryOpen} initial={entryDraft} editingId={editingRecord?.id} workItems={workItems} saving={saving} onClose={() => { if (!saving) { setEntryOpen(false); setEditingRecord(null); } }} onSave={handleSaveDraft} />
-      <ImportModal open={importOpen} saving={saving} onClose={closeImport} onImport={handleImport} existingFingerprints={existingFingerprints} />
+      {importOpen && <ImportModal saving={saving} onClose={closeImport} onImport={handleImport} existingFingerprints={existingFingerprints} />}
     </div>
   );
 }
