@@ -2,12 +2,14 @@ import {
   collection,
   deleteDoc,
   doc,
+  documentId,
   getDoc,
   getDocs,
   onSnapshot,
   query,
   serverTimestamp,
   setDoc,
+  where,
   writeBatch,
   type DocumentData,
 } from "firebase/firestore";
@@ -43,8 +45,8 @@ import {
 /** Firestore caps a batch at 500 writes. */
 const FIREBASE_BATCH_SIZE = 400;
 
-/** Above this many documents, one collection read beats reading them singly. */
-const SINGLE_READ_LIMIT = 30;
+/** Firestore allows at most 30 values in an `in` filter. */
+const DOCUMENT_ID_QUERY_LIMIT = 30;
 
 export const FIREBASE_MIGRATION_STORAGE_KEY =
   "gagebu:firebase-migration-complete";
@@ -249,14 +251,17 @@ export class FirebaseRepository<T extends BaseEntity>
         });
       }
     }
+    // Same rule as the local repository: two items for one document collapse to
+    // the last one, so a batch never queues the same reference twice.
+    const unique = [...new Map(items.map((item) => [item.id.trim(), item])).values()];
     const written: T[] = [];
     let committed = 0;
     try {
       const firestore = ensureFirebase();
       const target = await this.collectionForUser();
-      const storedCreatedAt = await this.createdAtFor(target, items);
-      for (let offset = 0; offset < items.length; offset += FIREBASE_BATCH_SIZE) {
-        const chunk = items.slice(offset, offset + FIREBASE_BATCH_SIZE);
+      const storedCreatedAt = await this.createdAtFor(target, unique);
+      for (let offset = 0; offset < unique.length; offset += FIREBASE_BATCH_SIZE) {
+        const chunk = unique.slice(offset, offset + FIREBASE_BATCH_SIZE);
         const batch = writeBatch(firestore);
         for (const item of chunk) {
           const id = item.id.trim();
@@ -295,25 +300,22 @@ export class FirebaseRepository<T extends BaseEntity>
   }
 
   /**
-   * Stored creation dates for the ids about to be written. A handful of
-   * documents are cheaper to read one by one than the whole collection.
+   * Stored creation dates for the ids about to be written. Reading them by id
+   * costs one query per 30 documents and never depends on how large the
+   * collection has grown.
    */
   private async createdAtFor(
     target: Awaited<ReturnType<FirebaseRepository<T>["collectionForUser"]>>,
     items: T[],
   ): Promise<Map<string, unknown>> {
-    if (items.length <= SINGLE_READ_LIMIT) {
-      const entries = await Promise.all(
-        items.map(async (item) => {
-          const id = item.id.trim();
-          const existing = await getDoc(doc(target, id));
-          return [id, existing.data()?.createdAt] as const;
-        }),
-      );
-      return new Map(entries);
+    const ids = items.map((item) => item.id.trim());
+    const stored = new Map<string, unknown>();
+    for (let offset = 0; offset < ids.length; offset += DOCUMENT_ID_QUERY_LIMIT) {
+      const chunk = ids.slice(offset, offset + DOCUMENT_ID_QUERY_LIMIT);
+      const snapshot = await getDocs(query(target, where(documentId(), "in", chunk)));
+      for (const entry of snapshot.docs) stored.set(entry.id, entry.data().createdAt);
     }
-    const snapshot = await getDocs(query(target));
-    return new Map(snapshot.docs.map((entry) => [entry.id, entry.data().createdAt]));
+    return stored;
   }
 
   async remove(id: string): Promise<void> {

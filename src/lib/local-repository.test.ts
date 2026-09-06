@@ -176,3 +176,54 @@ test("upsertMany on an empty batch touches nothing", async () => {
   assert.equal(writes, 0);
   assert.equal(notifications, 1); // only the immediate one from subscribe
 });
+
+test("upsertMany keeps a row whose fingerprint match is later addressed by id", async () => {
+  const repositoryUnderTest = repository();
+  await repositoryUnderTest.upsert(transaction({ id: "old", fingerprint: "f" }));
+
+  await repositoryUnderTest.upsertMany([
+    transaction({ id: "new", fingerprint: "f", memo: "새 행" }),
+    transaction({ id: "old", fingerprint: "g", memo: "다른 행" }),
+  ]);
+
+  const stored = await repositoryUnderTest.list();
+  assert.deepEqual(
+    stored.map((item) => [item.id, item.fingerprint, item.memo]).sort(),
+    [["new", "f", "새 행"], ["old", "g", "다른 행"]].sort(),
+  );
+});
+
+test("upsertMany keeps a row whose id match is later addressed by fingerprint", async () => {
+  const repositoryUnderTest = repository();
+  await repositoryUnderTest.upsert(transaction({ id: "a", fingerprint: "f1" }));
+
+  await repositoryUnderTest.upsertMany([
+    transaction({ id: "a", fingerprint: "f2", memo: "갱신" }),
+    transaction({ id: "b", fingerprint: "f1", memo: "다른 행" }),
+  ]);
+
+  const stored = await repositoryUnderTest.list();
+  assert.deepEqual(
+    stored.map((item) => [item.id, item.fingerprint, item.memo]).sort(),
+    [["a", "f2", "갱신"], ["b", "f1", "다른 행"]].sort(),
+  );
+});
+
+test("a failed write leaves nothing behind for the next reader", async () => {
+  const storage = fakeStorage();
+  const failing: StorageLike = {
+    ...storage,
+    setItem: (key, value) => {
+      if (value.includes("붙지 않아야 함")) throw new Error("quota");
+      storage.setItem(key, value);
+    },
+  };
+  const repositoryUnderTest = new LocalStorageRepository<Transaction>({ key: "test:transactions", storage: failing });
+  await repositoryUnderTest.upsert(transaction({ id: "t1" }));
+  await assert.rejects(() => repositoryUnderTest.upsertMany([transaction({ id: "t2", memo: "붙지 않아야 함" })]));
+
+  // A repository with no storage falls back to the in-process copy; the
+  // rejected batch must not be waiting for it there.
+  const fallback = new LocalStorageRepository<Transaction>({ key: "test:transactions", storage: null });
+  assert.deepEqual((await fallback.list()).map((item) => item.id), ["t1"]);
+});

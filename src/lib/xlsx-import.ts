@@ -1216,6 +1216,7 @@ async function saveRecords(
     [preview.stockOrders, (items) => repositories.stockOrders.upsertMany(items as StockOrder[]), sets[2], "stockOrders"],
     [preview.workItems, (items) => repositories.workItems.upsertMany(items as WorkItem[]), sets[3], "workItems"],
   ];
+  const savedSoFar = () => Object.values(saved).reduce((sum, value) => sum + value, 0);
   for (const [items, save, known, key] of groups) {
     // Collect first: writing one at a time re-serialises the whole store and
     // re-renders every subscriber per record, which is quadratic on a big sheet.
@@ -1229,8 +1230,17 @@ async function saveRecords(
       pending.push(item);
     }
     if (!pending.length) continue;
-    // Count what the repository stored, not what was handed to it.
-    saved[key] += (await save(pending)).length;
+    try {
+      // Count what the repository stored, not what was handed to it.
+      saved[key] += (await save(pending)).length;
+    } catch (error) {
+      // Groups are written one after another, so an earlier group may already
+      // be stored. Say so rather than letting it read as a total failure.
+      const written = savedSoFar();
+      if (!written) throw error;
+      const reason = error instanceof Error ? error.message : "기록을 저장하지 못했습니다.";
+      throw Object.assign(new Error(`${reason} ${written}건은 이미 저장되었습니다.`), { cause: error });
+    }
   }
   return { ...saved, skippedExisting };
 }

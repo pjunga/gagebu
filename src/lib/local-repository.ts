@@ -60,10 +60,10 @@ function writeRaw(storage: StorageLike | null, key: string, value: string): void
   }
   try {
     storage.setItem(key, value);
-  } catch (error) {
-    // Retain a process-local copy so the current session remains usable, but
-    // surface a safe error to the caller rather than silently claiming success.
     memoryStorage.set(key, value);
+  } catch (error) {
+    // Do not keep the rejected value: a caller that rolls back would otherwise
+    // find it again through the fallback on the next read.
     throw new RepositoryError(
       "브라우저 저장 공간에 기록하지 못했습니다. 저장 공간을 확인해주세요.",
       { code: "storage/write-failed", operation: "write", cause: error },
@@ -368,7 +368,7 @@ export class LocalStorageRepository<T extends BaseEntity>
    * is optional: a batch builds it once instead of scanning per item, which is
    * quadratic on a large import.
    */
-  private apply(item: T, index?: ItemIndex): T {
+  private apply(item: T, index?: ItemIndex): { item: T; at: number } {
     const id = item.id?.trim();
     if (!id) {
       throw new RepositoryError("기록 식별자가 없습니다.", {
@@ -396,12 +396,19 @@ export class LocalStorageRepository<T extends BaseEntity>
     };
     const at =
       existingIndex >= 0 ? existingIndex : fingerprintIndex >= 0 ? fingerprintIndex : this.items.length;
+    const replaced = this.items[at];
     this.items[at] = updated;
     if (index) {
+      // The row that sat here is gone; leaving its keys behind would point a
+      // later item in the batch at a row that no longer exists.
+      if (replaced && replaced.id !== id) index.byId.delete(replaced.id);
+      if (replaced?.fingerprint && replaced.fingerprint !== updated.fingerprint) {
+        index.byFingerprint.delete(replaced.fingerprint);
+      }
       index.byId.set(id, at);
       if (updated.fingerprint) index.byFingerprint.set(updated.fingerprint, at);
     }
-    return updated;
+    return { item: updated, at };
   }
 
   /**
@@ -409,8 +416,16 @@ export class LocalStorageRepository<T extends BaseEntity>
    * contract. Callers spread the existing record in when they mean to keep it.
    */
   async upsert(item: T): Promise<T> {
-    const updated = this.apply(item);
-    this.persist();
+    const previous = this.items;
+    this.items = [...previous];
+    let updated: T;
+    try {
+      updated = this.apply(item).item;
+      this.persist();
+    } catch (error) {
+      this.items = previous;
+      throw error;
+    }
     this.emit();
     return cloneStored(updated);
   }
@@ -421,8 +436,8 @@ export class LocalStorageRepository<T extends BaseEntity>
    * record, so a large import spends most of its time on work it repeats.
    *
    * Items addressing the same row — same id, or same fingerprint — collapse to
-   * the last one given, and the result holds the rows actually stored. Nothing
-   * is kept if the write fails.
+   * the last one given, and the result holds the rows actually stored, ordered
+   * by where they sit. Nothing is kept if the write fails.
    */
   async upsertMany(items: T[]): Promise<T[]> {
     if (!items.length) return [];
@@ -436,26 +451,29 @@ export class LocalStorageRepository<T extends BaseEntity>
     }
     const previous = this.items;
     this.items = [...previous];
+    const written = new Map<number, T>();
     try {
       const index: ItemIndex = { byId: new Map(), byFingerprint: new Map() };
       this.items.forEach((item, at) => {
         index.byId.set(item.id, at);
         if (item.fingerprint) index.byFingerprint.set(item.fingerprint, at);
       });
-      const written = new Map<number, T>();
       for (const item of items) {
-        const updated = this.apply(item, index);
-        written.set(index.byId.get(updated.id) ?? this.items.indexOf(updated), updated);
+        const { item: updated, at } = this.apply(item, index);
+        written.set(at, updated);
       }
       this.persist();
-      this.emit();
-      return [...written.values()].map((item) => cloneStored(item));
     } catch (error) {
       // A partly applied batch that never reached storage would resurrect on
       // the next successful write and vanish on a reload.
       this.items = previous;
       throw error;
     }
+    // Past this point the store is written: failing here must not roll back.
+    this.emit();
+    return [...written.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([, item]) => cloneStored(item));
   }
 
   async remove(id: string): Promise<void> {
