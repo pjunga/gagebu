@@ -21,6 +21,11 @@
  * What it cannot see: a real device's address bar, touch handling, or the iOS
  * Safari bottom bar.
  *
+ * A full run loads the app a dozen times. On a dev server that recompiles for
+ * each of them the later screens can miss the per-sheet budget and report
+ * "모달을 열지 못해" — rerun, or pass `screens` with fewer sizes, before reading
+ * that as a layout problem.
+ *
  * Fixed seed: 3 transactions (식비 15,000 / 주거·관리비 1,250,000 / 급여
  * 3,200,000 imported), 1 savings account maturing 2026-09-20, 1 USD stock
  * order, 1 work item.
@@ -90,6 +95,9 @@ const MIN_TARGET = 44;
 
 /** Generous: a dev server recompiles for each iframe, and a stall must still surface. */
 const SCREEN_TIMEOUT_MS = 150000;
+
+/** One sheet should never take this long; bounding it keeps the screen's budget. */
+const OPENER_TIMEOUT_MS = 30000;
 
 /** Rising token: a run that timed out must not write over a later restore. */
 globalThis.__mobileAuditRun ??= { token: 0, running: false, hosts: new Set() };
@@ -177,9 +185,12 @@ function smallTargets(doc) {
     // A visually hidden control is operated through its label, not directly.
     .filter((el) => !el.closest(".sr-only"))
     .map((el) => {
-      const rect = el.getBoundingClientRect();
-      return { label: describe(el), height: Math.round(rect.height), width: Math.round(rect.width) };
+      // Where a label wraps the control, the label is what a finger hits.
+      const label = el.closest("label");
+      const box = label && label.getBoundingClientRect().height >= MIN_TARGET ? label : el;
+      return { el, rect: box.getBoundingClientRect() };
     })
+    .map(({ el, rect }) => ({ label: describe(el), height: Math.round(rect.height), width: Math.round(rect.width) }))
     .filter((target) => target.height < MIN_TARGET || target.width < MIN_TARGET);
 }
 
@@ -224,35 +235,64 @@ function statCardCheck(doc) {
 }
 
 /** Opens each sheet in turn: their close buttons only exist while they are open. */
-async function modalCheck(doc, win) {
+async function modalCheck(doc, win, sweepAll) {
+  // Each sheet lives on a particular view; the panels are mounted one at a time.
   const openers = [
-    { label: "새 내역", find: (d) => [...d.querySelectorAll("button")].find((b) => /^\+?\s*추가$/.test(b.innerText.trim())) },
-    { label: "내역 상세", find: (d) => [...d.querySelectorAll("button")].find((b) => /상세 보기$/.test((b.getAttribute("aria-label") || "").trim())) },
-    { label: "작업 상세", find: (d) => [...d.querySelectorAll("button")].find((b) => b.innerText.trim() === "상세") },
+    { label: "새 내역", view: "한눈에 보기", find: (d) => [...d.querySelectorAll("button")].find((b) => /^\+?\s*추가$/.test(b.innerText.trim())) },
+    // The desktop import button is in the DOM but hidden at phone widths, so
+    // the visible one has to be picked rather than the first match.
+    { label: "가져오기", view: "한눈에 보기", find: (d) => [...d.querySelectorAll("button")].filter(isVisible).find((b) => /가져오기$/.test((b.getAttribute("aria-label") || b.innerText).trim())) },
+    // The table is replaced by a card list below md, and those rows carry no label.
+    { label: "내역 상세", view: "수입·지출", find: (d) => [...d.querySelectorAll("button")].filter(isVisible).find((b) => /상세 보기$/.test((b.getAttribute("aria-label") || "").trim()))
+      ?? [...d.querySelectorAll("main .md\\:hidden button")].filter(isVisible)[0] },
+    { label: "자산 상세", view: "자산", find: (d) => [...d.querySelectorAll("main button")].find((b) => /만기|₩/.test(b.innerText) && b.innerText.trim().length > 6) },
+    { label: "작업 상세", view: "작업 관리", find: (d) => [...d.querySelectorAll("button")].find((b) => b.innerText.trim() === "상세") },
     // Reached only from inside the detail sheet, and its close button is one of
     // the ones this change resized.
-    { label: "작업 수정", nested: true, find: (d) => [...d.querySelectorAll("button")].find((b) => b.innerText.trim() === "상세") },
-    { label: "가져오기", find: (d) => [...d.querySelectorAll("button")].find((b) => /가져오기$/.test((b.getAttribute("aria-label") || b.innerText).trim())) },
+    { label: "작업 수정", view: "작업 관리", nested: true, find: (d) => [...d.querySelectorAll("button")].find((b) => b.innerText.trim() === "상세") },
   ];
   const small = [];
+  const missing = [];
   let sheet = null;
-  for (const opener of openers) {
+  // Target sizes come from responsive classes, so they are identical at every
+  // phone width; opening every sheet at every width costs minutes and tells
+  // nothing new. The narrowest width sweeps them all.
+  for (const opener of sweepAll ? openers : openers.slice(0, 1)) {
+    try {
+      await withTimeout(openOne(doc, win, opener, small, (found) => { sheet ??= found; }), OPENER_TIMEOUT_MS, `${opener.label} 열기`);
+    } catch (error) {
+      missing.push(`${opener.label} (${error.message})`);
+    }
+    // Closing is best effort and outside the budget: a slow close must not turn
+    // a measurement that already succeeded into a failure.
+    const open = doc.querySelector('[role="dialog"], [role="alertdialog"]');
+    const close = open && [...open.querySelectorAll("button")].find((b) => /닫기|취소/.test((b.getAttribute("aria-label") || b.innerText).trim()));
+    close?.click();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  return { ...(sheet ?? { open: false, fullWidth: false, bottomSheet: false, withinViewport: true, unscrollableOverflow: 0 }), small, missing };
+}
+
+/** One sheet: open it, sweep it, close it. Bounded so a stuck opener cannot eat the screen's budget. */
+async function openOne(doc, win, opener, small, remember) {
+  {
+    if (!(await gotoView(doc, opener.view))) throw new Error(`${opener.view} 탭을 찾지 못함`);
     const button = opener.find(doc);
-    if (!button || !button.getClientRects().length) continue;
+    if (!button || !button.getClientRects().length) throw new Error("여는 버튼 없음");
     button.click();
     await new Promise((resolve) => setTimeout(resolve, 700));
     if (opener.nested) {
       const step = [...doc.querySelectorAll('[role="dialog"] button')].find((b) => b.innerText.trim() === "수정");
-      if (!step) continue;
+      if (!step) throw new Error("상세 안에서 수정 버튼을 찾지 못함");
       step.click();
       await new Promise((resolve) => setTimeout(resolve, 700));
     }
     const dialog = doc.querySelector('[role="dialog"], [role="alertdialog"]');
-    if (!dialog) continue;
+    if (!dialog) throw new Error("열리지 않음");
     small.push(...smallTargets(dialog).map((target) => ({ ...target, modal: opener.label })));
-    if (!sheet) {
+    {
       const rect = dialog.getBoundingClientRect();
-      sheet = {
+      remember({
         open: true,
         fullWidth: Math.round(rect.x) === 0 && Math.round(rect.width) === win.innerWidth,
         bottomSheet: Math.abs(rect.y + rect.height - win.innerHeight) < 4,
@@ -261,13 +301,9 @@ async function modalCheck(doc, win) {
         unscrollableOverflow: [...dialog.querySelectorAll("form, div")].filter(
           (el) => el.scrollHeight > el.clientHeight + 4 && !/auto|scroll/.test(getComputedStyle(el).overflowY),
         ).length,
-      };
+      });
     }
-    const close = [...dialog.querySelectorAll("button")].find((b) => /닫기|취소/.test((b.getAttribute("aria-label") || b.innerText).trim()));
-    close?.click();
-    await new Promise((resolve) => setTimeout(resolve, 400));
   }
-  return { ...(sheet ?? { open: false, fullWidth: false, bottomSheet: false, withinViewport: true, unscrollableOverflow: 0 }), small };
 }
 
 /**
@@ -290,7 +326,7 @@ async function emptyStatePass(screen, views, token) {
   }, true);
 }
 
-async function measure(screen, views) {
+async function measure(screen, views, sweepModals) {
   return probe(screen, async (doc, win) => {
     const nav = navCheck(doc, win);
     const perView = {};
@@ -306,7 +342,7 @@ async function measure(screen, views) {
       };
     }
     if (!(await gotoView(doc, views[0]))) throw new Error(`${screen.width}px: ${views[0]} 탭을 찾지 못함`);
-    const modal = await modalCheck(doc, win);
+    const modal = await modalCheck(doc, win, sweepModals);
     return { screen, nav, perView, modal };
   });
 }
@@ -352,7 +388,7 @@ async function mobileAudit({ screens = SCREENS, desktopScreens = DESKTOP_SCREENS
     for (const screen of screens) {
       let row;
       try {
-        row = await withTimeout(measure(screen, views), 60000, `${screen.width}px 측정`);
+        row = await withTimeout(measure(screen, views, screen === screens[0]), SCREEN_TIMEOUT_MS, `${screen.width}px 측정`);
       } catch (error) {
         failures.push(`${screen.width}: ${error.message}`);
         table.push({ width: screen.width, "탭 4개 보임": "-", "탭 높이": "-", "44px 미만": "-", "카드 높이차": "-", "카드 2줄": "-", "가로 넘침": "-", "바텀시트": "-" });
@@ -400,6 +436,7 @@ async function mobileAudit({ screens = SCREENS, desktopScreens = DESKTOP_SCREENS
       } else {
         failures.push(`${screen.width}: 스탯 카드를 찾지 못함`);
       }
+      row.modal.missing.forEach((label) => failures.push(`${screen.width}: ${label} 모달을 열지 못해 측정하지 못함`));
       if (!row.modal.open) failures.push(`${screen.width}: 모달이 열리지 않음`);
       else {
         if (!row.modal.fullWidth) failures.push(`${screen.width}: 모달이 전폭이 아님`);
