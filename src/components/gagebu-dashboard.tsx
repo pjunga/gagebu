@@ -1015,6 +1015,9 @@ function ImportModal({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [stage, setStage] = useState<"select" | "preview">("select");
+  // The file input only exists in the select stage, so its ref is null by the
+  // time the user confirms; the chosen file has to outlive that element.
+  const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState("");
@@ -1023,6 +1026,7 @@ function ImportModal({
     if (!open) return;
     /* eslint-disable react-hooks/set-state-in-effect -- reset the import wizard for each open */
     setStage("select");
+    setFile(null);
     setPreview(null);
     setConfirmed(false);
     setError("");
@@ -1042,17 +1046,18 @@ function ImportModal({
   if (!open) return null;
 
   const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const isSupported = /\.xlsx$/i.test(file.name);
+    const selected = event.target.files?.[0];
+    if (!selected) return;
+    const isSupported = /\.xlsx$/i.test(selected.name);
     if (!isSupported) {
       setError("현재는 XLSX 파일만 선택할 수 있습니다.");
       return;
     }
     setError("");
     try {
-      const parsed = await previewXlsxImport(file, { existingFingerprints });
-      setPreview({ ...parsed, fileName: file.name });
+      const parsed = await previewXlsxImport(selected, { existingFingerprints });
+      setFile(selected);
+      setPreview({ ...parsed, fileName: selected.name });
       setStage("preview");
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "엑셀 파일을 읽지 못했습니다.");
@@ -1061,6 +1066,7 @@ function ImportModal({
 
   const backToSelect = () => {
     setStage("select");
+    setFile(null);
     setPreview(null);
     setConfirmed(false);
     if (inputRef.current) inputRef.current.value = "";
@@ -1120,7 +1126,7 @@ function ImportModal({
               </label>
               <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <button type="button" onClick={onClose} className="h-11 rounded-2xl px-5 text-sm font-medium text-muted transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">취소</button>
-                <button type="button" disabled={!confirmed} onClick={() => onImport((inputRef.current?.files?.[0]) as File, preview)} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"><Icon name="upload" size={16} /> 확인 후 저장</button>
+                <button type="button" disabled={!confirmed || !file} onClick={() => file && onImport(file, preview)} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"><Icon name="upload" size={16} /> 확인 후 저장</button>
               </div>
             </div>
           )}
