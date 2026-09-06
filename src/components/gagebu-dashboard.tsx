@@ -2,7 +2,7 @@
 
 import { AuthAccountControls } from "@/components/auth-gate";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import {
   createEntityId,
@@ -1024,7 +1024,7 @@ function ImportModal({
 }: {
   importing: boolean;
   onClose: () => void;
-  onImport: (file: File, preview: ImportPreview) => Promise<string | null>;
+  onImport: (file: File) => Promise<string | null>;
   existingFingerprints?: string[];
 }) {
   const [stage, setStage] = useState<"select" | "preview">("select");
@@ -1039,6 +1039,11 @@ function ImportModal({
   const confirmRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useDialogFocus(true, onClose);
 
+  useEffect(() => {
+    // The confirm button held focus until it was disabled for the save; once a
+    // failure re-enables it, hand focus back rather than leaving it on <body>.
+    if (error && !importing) confirmRef.current?.focus();
+  }, [error, importing]);
   const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const selected = event.target.files?.[0];
     // Clear the control so picking the same path again still fires a change.
@@ -1067,19 +1072,16 @@ function ImportModal({
       if (pick !== pickRef.current) return;
       setError(reason instanceof Error ? reason.message : "엑셀 파일을 읽지 못했습니다.");
     } finally {
-      if (pick === pickRef.current) setParsing(false);
+      // Unconditional: this call is the only one that raised the flag.
+      setParsing(false);
     }
   };
 
   const handleConfirm = async () => {
     if (!file || !preview) return;
     setError("");
-    const message = await onImport(file, preview);
-    if (!message) return;
-    setError(message);
-    // The button was disabled while saving, so focus dropped to <body>; take it
-    // back once React has re-enabled it.
-    window.requestAnimationFrame(() => confirmRef.current?.focus());
+    const message = await onImport(file);
+    if (message) setError(message);
   };
 
   const backToSelect = () => {
@@ -1581,7 +1583,6 @@ export default function GagebuDashboard() {
   const [entryOpen, setEntryOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<FinanceRecord | null>(null);
   const [importing, setImporting] = useState(false);
-  const importingRef = useRef(false);
   const [entryDraft, setEntryDraft] = useState<EntryDraft>(defaultDraft());
   const [detailRecord, setDetailRecord] = useState<FinanceRecord | null>(null);
   const [deleteRecord, setDeleteRecord] = useState<FinanceRecord | null>(null);
@@ -1876,16 +1877,11 @@ export default function GagebuDashboard() {
     }
   };
 
-  const closeImport = useCallback(() => {
-    if (!importingRef.current) setImportOpen(false);
-  }, []);
-
   /** Reports the failure back to the modal instead of closing it, so a retry
    *  keeps the preview the user already confirmed. */
-  const handleImport = async (file: File, preview: ImportPreview): Promise<string | null> => {
+  const handleImport = async (file: File): Promise<string | null> => {
     setError("");
     setImporting(true);
-    importingRef.current = true;
     try {
       const result = await importXlsxFile(file, repositories, { existingFingerprints });
       const savedTotal = Object.values(result.saved).reduce((sum, value) => sum + value, 0);
@@ -1893,7 +1889,7 @@ export default function GagebuDashboard() {
       setToast(
         savedTotal
           ? `${savedTotal}건을 저장했습니다${result.skippedExisting ? ` · 중복 ${result.skippedExisting}건 제외` : ""}.`
-          : preview.records.length
+          : result.records.length || result.skippedExisting || result.counts.duplicates
             ? "새로 저장할 내역이 없습니다. 중복 내역을 확인해보세요."
             : "저장할 데이터 행이 없습니다.",
       );
@@ -1901,7 +1897,6 @@ export default function GagebuDashboard() {
     } catch (reason: unknown) {
       return reason instanceof Error ? reason.message : "엑셀 내역을 저장하지 못했습니다.";
     } finally {
-      importingRef.current = false;
       setImporting(false);
     }
   };
@@ -2029,7 +2024,7 @@ export default function GagebuDashboard() {
       <DetailModal record={detailRecord} onClose={() => setDetailRecord(null)} onEdit={openEdit} onDelete={(record) => setDeleteRecord(record)} />
       <DeleteDialog record={deleteRecord} onClose={() => setDeleteRecord(null)} onConfirm={handleDeleteConfirm} />
       <EntryModal open={entryOpen} initial={entryDraft} editingId={editingRecord?.id} workItems={workItems} saving={saving} onClose={() => { if (!saving) { setEntryOpen(false); setEditingRecord(null); } }} onSave={handleSaveDraft} />
-      {importOpen && <ImportModal importing={importing} onClose={closeImport} onImport={handleImport} existingFingerprints={existingFingerprints} />}
+      {importOpen && <ImportModal importing={importing} onClose={() => { if (!importing) setImportOpen(false); }} onImport={handleImport} existingFingerprints={existingFingerprints} />}
     </div>
   );
 }
