@@ -120,8 +120,19 @@ export type WorkItemStatus =
 
 export type WorkItemPriority = "low" | "normal" | "high" | "urgent";
 
+export const WORK_CATEGORIES = ["교수설계", "위시스프링", "레미제라블", "그외"] as const;
+
+export type WorkCategory = (typeof WORK_CATEGORIES)[number];
+
+/**
+ * Records saved before categories existed all came from the instructional
+ * design ledger, so a missing category is read as 교수설계 until the user edits it.
+ */
+export const DEFAULT_WORK_CATEGORY: WorkCategory = "교수설계";
+
 export interface WorkItem extends BaseEntity {
   title: string;
+  category?: WorkCategory;
   workDate?: string;
   course?: string;
   courseNumber?: string;

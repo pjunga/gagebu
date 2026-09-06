@@ -101,6 +101,27 @@ test("previewImportRows skips rows whose fingerprint was already imported", () =
   assert.deepEqual(second.duplicateFingerprints.sort(), first.records.map((record) => record.fingerprint).sort());
 });
 
+test("previewImportRows tags ledger work items as 교수설계 without changing their fingerprint", () => {
+  const workLedger: Record<string, WorkbookRows> = {
+    부수입: [
+      ["발송날짜", "과정번호", "차시", "학교", "작업제목", "금액", "작업현황"],
+      ["2026-03-02", "A-1", "3", "서울고", "교안 작성", "150,000", "입금"],
+    ],
+  };
+  const first = previewImportRows(workLedger, { year: 2026 });
+
+  assert.equal(first.counts.workItems, 1);
+  assert.equal(first.workItems[0].category, "교수설계");
+
+  const second = previewImportRows(workLedger, {
+    year: 2026,
+    existingFingerprints: first.records.map((record) => record.fingerprint),
+  });
+
+  assert.equal(second.counts.workItems, 0);
+  assert.equal(second.counts.duplicates, 1);
+});
+
 test("previewImportRows reports sheets it does not understand", () => {
   const preview = previewImportRows({ 메모: [["아무거나"]] });
 
