@@ -395,15 +395,19 @@ function useDialogFocus(open: boolean, onClose: () => void) {
         event.preventDefault();
         return;
       }
-      if (!dialog.contains(document.activeElement)) {
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (active && !dialog.contains(active)) {
+        // Another dialog stacked on top owns the focus; leave it alone, or two
+        // traps fight over every Tab and neither ever advances.
+        if (active.closest('[aria-modal="true"]')) return;
         // Focus fell out of the dialog — a focused control was unmounted or
         // disabled. Bring it back instead of letting Tab leave the dialog.
         event.preventDefault();
-        focusable[0].focus();
+        (event.shiftKey ? last : first).focus();
         return;
       }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
       if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
@@ -1030,7 +1034,9 @@ function ImportModal({
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState("");
+  const [parsing, setParsing] = useState(false);
   const pickRef = useRef(0);
+  const confirmRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useDialogFocus(true, onClose);
 
   const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -1049,6 +1055,7 @@ function ImportModal({
     // A slow parse must not overwrite a file the user picked after it.
     const pick = pickRef.current + 1;
     pickRef.current = pick;
+    setParsing(true);
     try {
       const parsed = await previewXlsxImport(selected, { existingFingerprints });
       if (pick !== pickRef.current) return;
@@ -1059,6 +1066,8 @@ function ImportModal({
     } catch (reason: unknown) {
       if (pick !== pickRef.current) return;
       setError(reason instanceof Error ? reason.message : "엑셀 파일을 읽지 못했습니다.");
+    } finally {
+      if (pick === pickRef.current) setParsing(false);
     }
   };
 
@@ -1066,7 +1075,11 @@ function ImportModal({
     if (!file || !preview) return;
     setError("");
     const message = await onImport(file, preview);
-    if (message) setError(message);
+    if (!message) return;
+    setError(message);
+    // The button was disabled while saving, so focus dropped to <body>; take it
+    // back once React has re-enabled it.
+    window.requestAnimationFrame(() => confirmRef.current?.focus());
   };
 
   const backToSelect = () => {
@@ -1099,11 +1112,11 @@ function ImportModal({
 
           {stage === "select" && (
             <div>
-              <input id="workbook-file" type="file" accept=".xlsx" onChange={handleFile} className="sr-only" />
+              <input id="workbook-file" type="file" accept=".xlsx" disabled={parsing} onChange={handleFile} className="sr-only" />
               <label htmlFor="workbook-file" className="group flex cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-sky-400/30 bg-sky-500/[0.04] px-6 py-10 text-center transition hover:border-sky-300/60 hover:bg-sky-500/[0.08] focus-within:ring-2 focus-within:ring-sky-300">
                 <span className="flex h-12 w-12 items-center justify-center rounded-3xl bg-sky-500/10 text-sky-200"><Icon name="upload" size={22} /></span>
                 <span className="mt-4 text-sm font-medium text-body">엑셀 파일을 선택하세요</span>
-              <span className="mt-1 text-xs text-faint">.xlsx 지원 · 저장 전에 시트와 행을 미리 확인합니다</span>
+              <span className="mt-1 text-xs text-faint">{parsing ? "파일을 읽는 중입니다…" : ".xlsx 지원 · 저장 전에 시트와 행을 미리 확인합니다"}</span>
               </label>
               {error && <p role="alert" className="mt-3 text-xs text-rose-200">{error}</p>}
               <p className="mt-4 flex items-start gap-2 rounded-2xl bg-card px-3 py-3 text-xs leading-5 text-faint"><Icon name="info" size={15} className="mt-0.5 text-muted" />개인정보가 포함된 파일은 필요한 범위만 선택하고, 저장 전 인식 결과를 확인하세요.</p>
@@ -1134,7 +1147,7 @@ function ImportModal({
               {importing && <p className="mt-3 text-xs text-faint">저장 중입니다. 완료된 뒤에 닫을 수 있어요.</p>}
               <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <button type="button" onClick={onClose} disabled={importing} className="h-11 rounded-2xl px-5 text-sm font-medium text-muted transition hover:bg-card-strong hover:text-ink disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">취소</button>
-                <button type="button" disabled={!confirmed || !file || importing} onClick={handleConfirm} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200">{importing ? <Icon name="refresh" size={16} className="animate-spin" /> : <Icon name="upload" size={16} />} 확인 후 저장</button>
+                <button ref={confirmRef} type="button" disabled={!confirmed || !file || importing} onClick={handleConfirm} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200">{importing ? <Icon name="refresh" size={16} className="animate-spin" /> : <Icon name="upload" size={16} />} 확인 후 저장</button>
               </div>
             </div>
           )}
@@ -1870,13 +1883,12 @@ export default function GagebuDashboard() {
   /** Reports the failure back to the modal instead of closing it, so a retry
    *  keeps the preview the user already confirmed. */
   const handleImport = async (file: File, preview: ImportPreview): Promise<string | null> => {
-    setSaving(true);
+    setError("");
     setImporting(true);
     importingRef.current = true;
     try {
       const result = await importXlsxFile(file, repositories, { existingFingerprints });
       const savedTotal = Object.values(result.saved).reduce((sum, value) => sum + value, 0);
-      setError("");
       setImportOpen(false);
       setToast(
         savedTotal
@@ -1891,7 +1903,6 @@ export default function GagebuDashboard() {
     } finally {
       importingRef.current = false;
       setImporting(false);
-      setSaving(false);
     }
   };
 
