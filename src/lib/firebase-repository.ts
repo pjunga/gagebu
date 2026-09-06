@@ -582,11 +582,15 @@ export function createFirebaseRepositories(): DomainRepositories {
   const workItems = new FirebaseRepository<EntityByKind["workItem"]>({
     kind: "workItem",
   });
+  const workCategories = new FirebaseRepository<EntityByKind["workCategory"]>({
+    kind: "workCategory",
+  });
   return {
     transactions,
     savingsAccounts,
     stockOrders,
     workItems,
+    workCategories,
     savings: savingsAccounts,
     stocks: stockOrders,
     work: workItems,

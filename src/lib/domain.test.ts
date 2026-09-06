@@ -5,8 +5,12 @@ import {
   asFiniteNumber,
   asNonEmptyString,
   entityKindOf,
+  DESIGN_WORK_CATEGORY_ID,
   isTransaction,
+  sortWorkCategories,
+  workCategorySeedId,
   WORK_CATEGORIES,
+  type WorkCategoryRecord,
   type SavingsAccount,
   type StockOrder,
   type Transaction,
@@ -64,7 +68,7 @@ test("entityKindOf tells the four record kinds apart", () => {
   assert.equal(entityKindOf(work), "workItem");
 });
 
-test("firestore rules accept every work category the app can write", () => {
+test("firestore rules accept user-managed work categories", () => {
   const rules = readFileSync(new URL("../../firestore.rules", import.meta.url), "utf8");
   const workItemKeys = rules.match(/function validWorkItem[\s\S]*?hasOnly\(\[([\s\S]*?)\]\)/);
 
@@ -72,7 +76,24 @@ test("firestore rules accept every work category the app can write", () => {
   // hasOnly() rejects the whole write when a key is missing, so a new field
   // has to be listed here or every task save fails with permission-denied.
   assert.match(workItemKeys[1], /"category"/);
+  // Category names are user data now, so no name may be hard-coded in rules.
   for (const category of WORK_CATEGORIES) {
-    assert.ok(rules.includes(`"${category}"`), `firestore.rules is missing ${category}`);
+    assert.ok(!rules.includes(`"${category}"`), `firestore.rules still pins ${category}`);
   }
+  assert.match(rules, /match \/users\/\{userId\}\/workCategories\/\{categoryId\}/);
+});
+
+test("sortWorkCategories puts ordered names first and keeps the rest alphabetical", () => {
+  const item = (name: string, order?: number): WorkCategoryRecord => ({ id: name, name, order });
+  const sorted = sortWorkCategories([item("나중"), item("먼저", 0), item("가나다")]);
+  assert.deepEqual(sorted.map((entry) => entry.name), ["먼저", "가나다", "나중"]);
+});
+
+test("the design category seed id follows 교수설계 through a reorder of the defaults", () => {
+  // The UI reads the design category by id so a rename keeps course/session
+  // fields; reordering WORK_CATEGORIES must not point it at another default.
+  const seeded = WORK_CATEGORIES.map((name, index) => ({ id: workCategorySeedId(index), name }));
+  const design = seeded.find((category) => category.id === DESIGN_WORK_CATEGORY_ID);
+  assert.equal(design?.name, "교수설계");
+  assert.equal(new Set(seeded.map((category) => category.id)).size, seeded.length);
 });

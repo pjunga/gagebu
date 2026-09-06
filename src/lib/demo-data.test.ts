@@ -11,7 +11,7 @@ test("demo work items use valid categories and paid ones link to real side incom
   const workItemIds = new Set(data.workItems.map((item) => item.id));
 
   for (const item of data.workItems) {
-    assert.ok(item.category && WORK_CATEGORIES.includes(item.category), item.title);
+    assert.ok(item.category && (WORK_CATEGORIES as readonly string[]).includes(item.category), item.title);
     if (item.status === "paid") {
       assert.ok(
         item.sideIncomeTransactionId && transactionIds.has(item.sideIncomeTransactionId),

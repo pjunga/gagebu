@@ -10,7 +10,8 @@ export type EntityKind =
   | "transaction"
   | "savingsAccount"
   | "stockOrder"
-  | "workItem";
+  | "workItem"
+  | "workCategory";
 
 export type RecordSource = "manual" | "legacy" | "import";
 
@@ -120,9 +121,31 @@ export type WorkItemStatus =
 
 export type WorkItemPriority = "low" | "normal" | "high" | "urgent";
 
+/** Seed list written once for a user who has no category of their own yet. */
 export const WORK_CATEGORIES = ["교수설계", "위시스프링", "레미제라블", "그외"] as const;
 
-export type WorkCategory = (typeof WORK_CATEGORIES)[number];
+/**
+ * Fixed ids for the seeded defaults: two devices seeding at once converge on
+ * one row per default, and the instructional design category stays
+ * recognisable after the user renames it.
+ */
+export const workCategorySeedId = (index: number) => `category_seed_${index}`;
+
+export const DESIGN_WORK_CATEGORY_ID = workCategorySeedId(
+  WORK_CATEGORIES.indexOf("교수설계"),
+);
+
+/** Categories are user-managed, so a work item may carry any saved name. */
+export type WorkCategory = string;
+
+/** A category the user added, renamed, or kept from the seed list. */
+export interface WorkCategoryRecord extends BaseEntity {
+  name: string;
+  /** Lower sorts first; ties fall back to the name. */
+  order?: number;
+}
+
+export type WorkCategoryDraft = Omit<WorkCategoryRecord, "id"> & { id?: string };
 
 /**
  * Records saved before categories existed all came from the instructional
@@ -156,13 +179,15 @@ export type DomainEntity =
   | Transaction
   | SavingsAccount
   | StockOrder
-  | WorkItem;
+  | WorkItem
+  | WorkCategoryRecord;
 
 export type DraftByKind = {
   transaction: TransactionDraft;
   savingsAccount: SavingsAccountDraft;
   stockOrder: StockOrderDraft;
   workItem: WorkItemDraft;
+  workCategory: WorkCategoryDraft;
 };
 
 export type EntityByKind = {
@@ -170,6 +195,7 @@ export type EntityByKind = {
   savingsAccount: SavingsAccount;
   stockOrder: StockOrder;
   workItem: WorkItem;
+  workCategory: WorkCategoryRecord;
 };
 
 export const ENTITY_COLLECTIONS: Record<EntityKind, string> = {
@@ -177,6 +203,7 @@ export const ENTITY_COLLECTIONS: Record<EntityKind, string> = {
   savingsAccount: "savingsAccounts",
   stockOrder: "stockOrders",
   workItem: "workItems",
+  workCategory: "workCategories",
 };
 
 export function isTransaction(value: unknown): value is Transaction {
@@ -224,11 +251,32 @@ export function isWorkItem(value: unknown): value is WorkItem {
   );
 }
 
+export function isWorkCategoryRecord(value: unknown): value is WorkCategoryRecord {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Partial<WorkCategoryRecord> & { title?: unknown };
+  return (
+    typeof item.id === "string" &&
+    typeof item.name === "string" &&
+    item.title === undefined
+  );
+}
+
 export function entityKindOf(value: DomainEntity): EntityKind {
   if (isTransaction(value)) return "transaction";
   if (isSavingsAccount(value)) return "savingsAccount";
   if (isStockOrder(value)) return "stockOrder";
+  if (isWorkCategoryRecord(value)) return "workCategory";
   return "workItem";
+}
+
+/** Sort order shown in every category picker. */
+export function sortWorkCategories(items: WorkCategoryRecord[]): WorkCategoryRecord[] {
+  return [...items].sort((left, right) => {
+    const leftOrder = left.order ?? Number.MAX_SAFE_INTEGER;
+    const rightOrder = right.order ?? Number.MAX_SAFE_INTEGER;
+    if (leftOrder !== rightOrder) return leftOrder - rightOrder;
+    return left.name.localeCompare(right.name, "ko");
+  });
 }
 
 export function createEntityId(prefix = "record"): string {

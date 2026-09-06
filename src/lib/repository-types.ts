@@ -55,6 +55,7 @@ export interface DomainRepositories {
   savingsAccounts: CollectionRepository<EntityByKind["savingsAccount"]>;
   stockOrders: CollectionRepository<EntityByKind["stockOrder"]>;
   workItems: CollectionRepository<EntityByKind["workItem"]>;
+  workCategories: CollectionRepository<EntityByKind["workCategory"]>;
   /** Short aliases for consumers that use the domain noun rather than the collection name. */
   savings: CollectionRepository<EntityByKind["savingsAccount"]>;
   stocks: CollectionRepository<EntityByKind["stockOrder"]>;
