@@ -16,13 +16,17 @@ pnpm lint
 pnpm test     # node:test 기반 도메인·임포트 테스트
 ```
 
+## 데모 페이지
+
+`/demo` 경로는 더미 데이터로 채운 테스트용 페이지입니다. 로그인 없이 열리고, 데이터는 메모리에만 있어 새로고침하면 초기화됩니다. 메뉴에 노출되지 않고 검색엔진 색인도 막아 둡니다.
+
 ## Firebase 설정
 
 1. Firebase Console에서 프로젝트와 Web App을 만듭니다.
 2. Authentication의 로그인 제공업체에서 Google을 활성화합니다.
 3. Firestore Database를 생성합니다.
-4. `.env.local.example`을 `.env.local`로 복사하고 Web App 설정값 및 본인 Google 이메일을 입력합니다.
-5. `firestore.rules`의 허용 이메일도 같은 Google 이메일로 바꿉니다.
+4. `.env.local.example`을 `.env.local`로 복사하고 Web App 설정값과 허용할 Google 이메일을 입력합니다. 여러 명이면 쉼표로 구분합니다.
+5. `firestore.rules`의 허용 이메일 목록도 같은 주소들로 맞춥니다.
 6. Firebase CLI로 `firestore.rules`를 배포합니다.
 
 ```bash

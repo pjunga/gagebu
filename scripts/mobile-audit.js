@@ -352,8 +352,8 @@ async function mobileAudit({ screens = SCREENS, desktopScreens = DESKTOP_SCREENS
   const mode = document.documentElement.dataset.storageMode;
   if (mode !== "local") {
     throw new Error(
-      mode === "firebase"
-        ? "Firebase 모드입니다. 시드가 앱이 읽지 않는 키에 쓰여 측정이 무의미합니다."
+      mode === "firebase" || mode === "demo"
+        ? `${mode === "demo" ? "데모" : "Firebase"} 모드입니다. 시드가 앱이 읽지 않는 곳에 쓰여 측정이 무의미합니다.`
         : "저장소 모드를 확인할 수 없습니다. 이 스크립트는 앱 탭의 콘솔에서 실행해야 합니다.",
     );
   }

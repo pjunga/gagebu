@@ -20,7 +20,7 @@ import {
 } from "firebase/auth";
 import ThemeToggle from "./theme-toggle";
 import {
-  allowedGoogleEmail,
+  allowedGoogleEmails,
   auth,
   isAllowedFirebaseUser,
   isFirebaseConfigured,
@@ -78,14 +78,14 @@ function authErrorCode(error: unknown): string {
 
 export default function AuthGate({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(() =>
-    isFirebaseConfigured && auth && allowedGoogleEmail
+    isFirebaseConfigured && auth && allowedGoogleEmails.length
       ? { status: "loading" }
       : { status: "signed-out" },
   );
   const [signingIn, setSigningIn] = useState(false);
 
   useEffect(() => {
-    if (!isFirebaseConfigured || !auth || !allowedGoogleEmail) {
+    if (!isFirebaseConfigured || !auth || !allowedGoogleEmails.length) {
       return;
     }
 
@@ -178,7 +178,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   }
 
   const missingFirebase = !isFirebaseConfigured;
-  const missingAllowlist = !allowedGoogleEmail;
+  const missingAllowlist = !allowedGoogleEmails.length;
 
   return (
     <main className="app-glow relative flex min-h-screen items-center justify-center bg-app px-5 text-ink">

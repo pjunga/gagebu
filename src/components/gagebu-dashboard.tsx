@@ -28,6 +28,7 @@ import {
   savingsStatus,
   type AssetStatus,
 } from "@/lib/finance-display";
+import { createDemoRepositories } from "@/lib/demo-data";
 import { isFirebaseConfigured } from "@/lib/firebase";
 import { createDataRepositories } from "@/lib/repositories";
 import {
@@ -1600,8 +1601,8 @@ function TasksPanel({
   );
 }
 
-export default function GagebuDashboard() {
-  const [repositories] = useState(() => createDataRepositories());
+export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
+  const [repositories] = useState(() => (demo ? createDemoRepositories() : createDataRepositories()));
 
   const [activeView, setActiveView] = useState<ViewKey>("overview");
   const [selectedMonth, setSelectedMonth] = useState(currentMonth());
@@ -1625,8 +1626,10 @@ export default function GagebuDashboard() {
   useEffect(() => {
     // The audit script has no way to tell which backend is live; seeding the
     // local keys while Firebase answers would measure one set and describe another.
-    document.documentElement.dataset.storageMode = isFirebaseConfigured ? "firebase" : "local";
-  }, []);
+    // Demo runs on in-memory repositories, so seeding the local keys would
+    // measure a page that never reads them.
+    document.documentElement.dataset.storageMode = demo ? "demo" : isFirebaseConfigured ? "firebase" : "local";
+  }, [demo]);
 
   useEffect(() => {
     let active = true;
@@ -1996,7 +1999,7 @@ export default function GagebuDashboard() {
                 <Icon name="wallet" size={18} />
               </div>
               <div className="min-w-0">
-                <p className="text-[11px] font-medium text-faint">나의 금융 워크스페이스</p>
+                <p className={`text-[11px] font-medium ${demo ? "text-amber-300" : "text-faint"}`}>{demo ? "데모 · 더미 데이터 · 새로고침하면 초기화" : "나의 금융 워크스페이스"}</p>
                 <h1 className="mt-0.5 truncate text-lg font-semibold tracking-tight text-ink">{activeNav.label}</h1>
               </div>
             </div>
