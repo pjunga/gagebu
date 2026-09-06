@@ -5,8 +5,10 @@ import {
   asFiniteNumber,
   asNonEmptyString,
   entityKindOf,
+  DESIGN_WORK_CATEGORY_ID,
   isTransaction,
   sortWorkCategories,
+  workCategorySeedId,
   WORK_CATEGORIES,
   type WorkCategoryRecord,
   type SavingsAccount,
@@ -85,4 +87,13 @@ test("sortWorkCategories puts ordered names first and keeps the rest alphabetica
   const item = (name: string, order?: number): WorkCategoryRecord => ({ id: name, name, order });
   const sorted = sortWorkCategories([item("나중"), item("먼저", 0), item("가나다")]);
   assert.deepEqual(sorted.map((entry) => entry.name), ["먼저", "가나다", "나중"]);
+});
+
+test("the design category seed id follows 교수설계 through a reorder of the defaults", () => {
+  // The UI reads the design category by id so a rename keeps course/session
+  // fields; reordering WORK_CATEGORIES must not point it at another default.
+  const seeded = WORK_CATEGORIES.map((name, index) => ({ id: workCategorySeedId(index), name }));
+  const design = seeded.find((category) => category.id === DESIGN_WORK_CATEGORY_ID);
+  assert.equal(design?.name, "교수설계");
+  assert.equal(new Set(seeded.map((category) => category.id)).size, seeded.length);
 });

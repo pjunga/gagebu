@@ -124,6 +124,17 @@ export type WorkItemPriority = "low" | "normal" | "high" | "urgent";
 /** Seed list written once for a user who has no category of their own yet. */
 export const WORK_CATEGORIES = ["교수설계", "위시스프링", "레미제라블", "그외"] as const;
 
+/**
+ * Fixed ids for the seeded defaults: two devices seeding at once converge on
+ * one row per default, and the instructional design category stays
+ * recognisable after the user renames it.
+ */
+export const workCategorySeedId = (index: number) => `category_seed_${index}`;
+
+export const DESIGN_WORK_CATEGORY_ID = workCategorySeedId(
+  WORK_CATEGORIES.indexOf("교수설계"),
+);
+
 /** Categories are user-managed, so a work item may carry any saved name. */
 export type WorkCategory = string;
 
