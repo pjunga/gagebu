@@ -16,16 +16,19 @@ export class RepositoryError extends Error {
   readonly code: string;
   readonly operation?: string;
   readonly cause?: unknown;
+  /** Records already written when a partly applied batch failed. */
+  readonly alreadySaved?: number;
 
   constructor(
     message: string,
-    options: { code?: string; operation?: string; cause?: unknown } = {},
+    options: { code?: string; operation?: string; cause?: unknown; alreadySaved?: number } = {},
   ) {
     super(message);
     this.name = "RepositoryError";
     this.code = options.code ?? "repository/error";
     this.operation = options.operation;
     this.cause = options.cause;
+    this.alreadySaved = options.alreadySaved;
   }
 }
 
@@ -35,6 +38,11 @@ export interface CollectionRepository<T extends BaseEntity> {
   create(item: T): Promise<T>;
   update(item: T): Promise<T>;
   upsert(item: T): Promise<T>;
+  /**
+   * Applies several writes with one persist and one notification. The result
+   * holds the rows that were stored, in no guaranteed order.
+   */
+  upsertMany(items: T[]): Promise<T[]>;
   remove(id: string): Promise<void>;
   subscribe(
     onData: RepositoryListener<T>,

@@ -69,3 +69,196 @@ test("two subscriptions survive independently when they share a function", async
   await repositoryUnderTest.upsert(transaction());
   assert.equal(received.length - before, 1);
 });
+
+test("upsertMany writes the batch behind one notification", async () => {
+  const repositoryUnderTest = repository();
+  const batches: number[] = [];
+  await repositoryUnderTest.subscribe((items) => void batches.push(items.length));
+
+  const before = batches.length;
+  const written = await repositoryUnderTest.upsertMany([
+    transaction({ id: "t1", fingerprint: "a" }),
+    transaction({ id: "t2", fingerprint: "b" }),
+    transaction({ id: "t3", fingerprint: "c" }),
+  ]);
+
+  assert.equal(written.length, 3);
+  assert.equal((await repositoryUnderTest.list()).length, 3);
+  // One notification for the batch, not one per record.
+  assert.equal(batches.length - before, 1);
+  assert.equal(batches.at(-1), 3);
+});
+
+test("upsertMany keeps the placement rules of a single upsert", async () => {
+  const repositoryUnderTest = repository();
+  const created = await repositoryUnderTest.upsert(transaction({ id: "t1", fingerprint: "a" }));
+  await repositoryUnderTest.upsertMany([
+    transaction({ id: "t9", fingerprint: "a", memo: "저녁" }),
+    transaction({ id: "t2", fingerprint: "b" }),
+  ]);
+
+  const stored = await repositoryUnderTest.list();
+  assert.equal(stored.length, 2);
+  const matched = stored.find((item) => item.fingerprint === "a");
+  assert.equal(matched?.memo, "저녁");
+  assert.equal(matched?.createdAt, created.createdAt);
+});
+
+test("upsertMany persists once for the whole batch", async () => {
+  let writes = 0;
+  const storage = fakeStorage();
+  const counting: StorageLike = { ...storage, setItem: (key, value) => { writes += 1; storage.setItem(key, value); } };
+  const repositoryUnderTest = new LocalStorageRepository<Transaction>({ key: "test:transactions", storage: counting });
+
+  await repositoryUnderTest.upsertMany([
+    transaction({ id: "t1" }),
+    transaction({ id: "t2" }),
+    transaction({ id: "t3" }),
+  ]);
+
+  assert.equal(writes, 1);
+});
+
+test("upsertMany collapses items that address the same row", async () => {
+  const repositoryUnderTest = repository();
+  const written = await repositoryUnderTest.upsertMany([
+    transaction({ id: "t1", memo: "점심" }),
+    transaction({ id: "t1", memo: "저녁" }),
+    transaction({ id: "t2", fingerprint: "a" }),
+    transaction({ id: "t3", fingerprint: "a", memo: "덮어씀" }),
+  ]);
+
+  const stored = await repositoryUnderTest.list();
+  assert.equal(stored.length, 2);
+  assert.equal(written.length, 2);
+  assert.equal(stored.find((item) => item.id === "t1")?.memo, "저녁");
+  assert.equal(stored.find((item) => item.fingerprint === "a")?.memo, "덮어씀");
+});
+
+test("upsertMany keeps nothing when the store cannot be written", async () => {
+  const storage = fakeStorage();
+  const failing: StorageLike = {
+    ...storage,
+    setItem: (key, value) => {
+      if (value.includes("붙지 않아야 함")) throw new Error("quota");
+      storage.setItem(key, value);
+    },
+  };
+  const repositoryUnderTest = new LocalStorageRepository<Transaction>({ key: "test:transactions", storage: failing });
+  await repositoryUnderTest.upsert(transaction({ id: "t1" }));
+
+  await assert.rejects(() =>
+    repositoryUnderTest.upsertMany([transaction({ id: "t2", memo: "붙지 않아야 함" })]),
+  );
+  const stored = await repositoryUnderTest.list();
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0].id, "t1");
+});
+
+test("upsertMany rejects a batch with a missing id before writing any of it", async () => {
+  const repositoryUnderTest = repository();
+  await assert.rejects(
+    () => repositoryUnderTest.upsertMany([transaction({ id: "t1" }), transaction({ id: " " })]),
+    /기록 식별자가 없습니다/,
+  );
+  assert.equal((await repositoryUnderTest.list()).length, 0);
+});
+
+test("upsertMany on an empty batch touches nothing", async () => {
+  let writes = 0;
+  const storage = fakeStorage();
+  const counting: StorageLike = { ...storage, setItem: (key, value) => { writes += 1; storage.setItem(key, value); } };
+  const repositoryUnderTest = new LocalStorageRepository<Transaction>({ key: "test:transactions", storage: counting });
+  let notifications = 0;
+  await repositoryUnderTest.subscribe(() => { notifications += 1; });
+
+  assert.deepEqual(await repositoryUnderTest.upsertMany([]), []);
+  assert.equal(writes, 0);
+  assert.equal(notifications, 1); // only the immediate one from subscribe
+});
+
+test("upsertMany keeps a row whose fingerprint match is later addressed by id", async () => {
+  const repositoryUnderTest = repository();
+  await repositoryUnderTest.upsert(transaction({ id: "old", fingerprint: "f" }));
+
+  await repositoryUnderTest.upsertMany([
+    transaction({ id: "new", fingerprint: "f", memo: "새 행" }),
+    transaction({ id: "old", fingerprint: "g", memo: "다른 행" }),
+  ]);
+
+  const stored = await repositoryUnderTest.list();
+  assert.deepEqual(
+    stored.map((item) => [item.id, item.fingerprint, item.memo]).sort(),
+    [["new", "f", "새 행"], ["old", "g", "다른 행"]].sort(),
+  );
+});
+
+test("upsertMany keeps a row whose id match is later addressed by fingerprint", async () => {
+  const repositoryUnderTest = repository();
+  await repositoryUnderTest.upsert(transaction({ id: "a", fingerprint: "f1" }));
+
+  await repositoryUnderTest.upsertMany([
+    transaction({ id: "a", fingerprint: "f2", memo: "갱신" }),
+    transaction({ id: "b", fingerprint: "f1", memo: "다른 행" }),
+  ]);
+
+  const stored = await repositoryUnderTest.list();
+  assert.deepEqual(
+    stored.map((item) => [item.id, item.fingerprint, item.memo]).sort(),
+    [["a", "f2", "갱신"], ["b", "f1", "다른 행"]].sort(),
+  );
+});
+
+test("a failed write leaves nothing behind for the next reader", async () => {
+  const key = `test:transactions:${Math.random()}`;
+  const storage = fakeStorage();
+  const failing: StorageLike = {
+    ...storage,
+    setItem: (storageKey, value) => {
+      if (value.includes("붙지 않아야 함")) throw new Error("quota");
+      storage.setItem(storageKey, value);
+    },
+  };
+  const repositoryUnderTest = new LocalStorageRepository<Transaction>({ key, storage: failing });
+  await repositoryUnderTest.upsert(transaction({ id: "t1" }));
+  await assert.rejects(() => repositoryUnderTest.upsertMany([transaction({ id: "t2", memo: "붙지 않아야 함" })]));
+
+  assert.deepEqual((await repositoryUnderTest.list()).map((item) => item.id), ["t1"]);
+  // A repository with no storage reads the in-process fallback; the rejected
+  // batch must not be waiting for it there.
+  const fallback = new LocalStorageRepository<Transaction>({ key, storage: null });
+  assert.equal((await fallback.list()).some((item) => item.id === "t2"), false);
+});
+
+test("a batch places rows exactly where a sequence of upserts would", async () => {
+  const seeds = [
+    [transaction({ id: "a", fingerprint: "f1" }), transaction({ id: "b", fingerprint: "f1" })],
+    [transaction({ id: "b", fingerprint: "f2" }), transaction({ id: "a", fingerprint: "f1" })],
+    [],
+  ];
+  const batches = [
+    [transaction({ id: "c", fingerprint: "f1", memo: "하나" })],
+    [
+      transaction({ id: "a", fingerprint: "f2", memo: "하나" }),
+      transaction({ id: "b", fingerprint: "f1", memo: "둘" }),
+      transaction({ id: "c", fingerprint: "f2", memo: "셋" }),
+    ],
+    [transaction({ id: "a", fingerprint: "f1" }), transaction({ id: "a", fingerprint: "f3", memo: "덮어씀" })],
+  ];
+  const shape = (items: Transaction[]) => items.map((item) => [item.id, item.fingerprint, item.memo]);
+
+  for (const seed of seeds) {
+    for (const batch of batches) {
+      const batched = repository();
+      const sequential = repository();
+      for (const item of seed) {
+        await batched.upsert(item);
+        await sequential.upsert(item);
+      }
+      await batched.upsertMany(batch);
+      for (const item of batch) await sequential.upsert(item);
+
+      assert.deepEqual(shape(await batched.list()), shape(await sequential.list()));
+    }
+  }
+});

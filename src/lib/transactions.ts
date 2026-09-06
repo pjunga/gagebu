@@ -33,8 +33,14 @@ export async function subscribeToTransactions(
 ): Promise<Unsubscribe> {
   if (!isFirebaseConfigured) {
     const repository = getLocalTransactions();
-    for (const item of localItems) {
-      await repository.upsert(item);
+    try {
+      // The batch refuses outright if any id is missing; seeding would rather
+      // keep the records that are addressable than none of them.
+      await repository.upsertMany(localItems.filter((item) => item.id?.trim()));
+    } catch (error) {
+      // Seeding is best effort: report it and still open the stream, the same
+      // way the Firebase branch below does.
+      onError(error instanceof Error ? error.message : "기존 거래를 저장하지 못했습니다.");
     }
     return repository.subscribe(onData, (error) => onError(error.message));
   }

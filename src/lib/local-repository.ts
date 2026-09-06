@@ -61,9 +61,8 @@ function writeRaw(storage: StorageLike | null, key: string, value: string): void
   try {
     storage.setItem(key, value);
   } catch (error) {
-    // Retain a process-local copy so the current session remains usable, but
-    // surface a safe error to the caller rather than silently claiming success.
-    memoryStorage.set(key, value);
+    // Keep nothing: the fallback is for callers with no storage at all, and a
+    // rejected value left there would come back after a rollback.
     throw new RepositoryError(
       "브라우저 저장 공간에 기록하지 못했습니다. 저장 공간을 확인해주세요.",
       { code: "storage/write-failed", operation: "write", cause: error },
@@ -358,15 +357,17 @@ export class LocalStorageRepository<T extends BaseEntity>
   }
 
   /**
-   * Replaces the stored item; see the Firebase repository for the same
-   * contract. Callers spread the existing record in when they mean to keep it.
+   * Places one item; the caller decides when to persist and notify. The scan
+   * stays here rather than in a prebuilt index: the store can hold two rows
+   * with one fingerprint, and an index keyed by fingerprint cannot say which
+   * of them a write belongs to.
    */
-  async upsert(item: T): Promise<T> {
+  private apply(item: T, operation: string): { item: T; at: number } {
     const id = item.id?.trim();
     if (!id) {
       throw new RepositoryError("기록 식별자가 없습니다.", {
         code: "validation/missing-id",
-        operation: "upsert",
+        operation,
       });
     }
     const current = cloneStored(this.normalize({ ...item, id }));
@@ -383,19 +384,83 @@ export class LocalStorageRepository<T extends BaseEntity>
       createdAt: current.createdAt ?? stored?.createdAt ?? nowIso(),
       updatedAt: nowIso(),
     };
-    if (existingIndex >= 0) this.items[existingIndex] = updated;
-    else if (fingerprintIndex >= 0) this.items[fingerprintIndex] = updated;
-    else this.items.push(updated);
-    this.persist();
+    const at =
+      existingIndex >= 0 ? existingIndex : fingerprintIndex >= 0 ? fingerprintIndex : this.items.length;
+    this.items[at] = updated;
+    return { item: updated, at };
+  }
+
+  /**
+   * Replaces the stored item; see the Firebase repository for the same
+   * contract. Callers spread the existing record in when they mean to keep it.
+   */
+  async upsert(item: T): Promise<T> {
+    const previous = this.items;
+    this.items = [...previous];
+    let updated: T;
+    try {
+      updated = this.apply(item, "upsert").item;
+      this.persist();
+    } catch (error) {
+      this.items = previous;
+      throw error;
+    }
     this.emit();
     return cloneStored(updated);
+  }
+
+  /**
+   * Writes a whole batch behind a single persist and a single notification.
+   * One at a time re-serialises the store and re-renders every subscriber per
+   * record, so a large import spends most of its time on work it repeats.
+   *
+   * Items addressing the same row — same id, or same fingerprint — collapse to
+   * the last one given, and the result holds the rows actually stored, ordered
+   * by where they sit. Nothing is kept if the write fails.
+   */
+  async upsertMany(items: T[]): Promise<T[]> {
+    if (!items.length) return [];
+    for (const item of items) {
+      if (!item.id?.trim()) {
+        throw new RepositoryError("기록 식별자가 없습니다.", {
+          code: "validation/missing-id",
+          operation: "upsert-many",
+        });
+      }
+    }
+    const previous = this.items;
+    this.items = [...previous];
+    const written = new Map<number, T>();
+    try {
+      for (const item of items) {
+        const { item: updated, at } = this.apply(item, "upsert-many");
+        written.set(at, updated);
+      }
+      this.persist();
+    } catch (error) {
+      // A partly applied batch that never reached storage would resurrect on
+      // the next successful write and vanish on a reload.
+      this.items = previous;
+      throw error;
+    }
+    // Past this point the store is written: failing here must not roll back.
+    this.emit();
+    return [...written.entries()]
+      .sort(([left], [right]) => left - right)
+      .map(([, item]) => cloneStored(item));
   }
 
   async remove(id: string): Promise<void> {
     const next = this.items.filter((item) => item.id !== id);
     if (next.length === this.items.length) return;
+    const previous = this.items;
     this.items = next;
-    this.persist();
+    try {
+      this.persist();
+    } catch (error) {
+      this.items = previous;
+      throw error;
+    }
     this.emit();
   }
 

@@ -2,12 +2,14 @@ import {
   collection,
   deleteDoc,
   doc,
+  documentId,
   getDoc,
   getDocs,
   onSnapshot,
   query,
   serverTimestamp,
   setDoc,
+  where,
   writeBatch,
   type DocumentData,
 } from "firebase/firestore";
@@ -39,6 +41,21 @@ import {
   type RepositoryErrorListener,
   type Unsubscribe,
 } from "./repository-types";
+
+/** Firestore caps a batch at 500 writes. */
+const FIREBASE_BATCH_SIZE = 400;
+
+/** Firestore allows at most 30 values in an `in` filter. */
+const DOCUMENT_ID_QUERY_LIMIT = 30;
+
+/** How many id lookups run at once while preparing a batch. */
+const CONCURRENT_READS = 8;
+
+/** Firestore codes that reject the request itself, whatever it carried. */
+function appliesToEveryWrite(error: unknown): boolean {
+  const code = (error as { code?: unknown })?.code;
+  return code === "permission-denied" || code === "unauthenticated" || code === "unavailable";
+}
 
 export const FIREBASE_MIGRATION_STORAGE_KEY =
   "gagebu:firebase-migration-complete";
@@ -229,6 +246,149 @@ export class FirebaseRepository<T extends BaseEntity>
     }
   }
 
+  /**
+   * Writes a whole batch in as few round trips as Firestore allows. Stored
+   * createdAt values are read once for the batch rather than per document.
+   */
+  async upsertMany(items: T[]): Promise<T[]> {
+    if (!items.length) return [];
+    for (const item of items) {
+      if (!item.id?.trim()) {
+        throw new RepositoryError("기록 식별자가 없습니다.", {
+          code: "validation/missing-id",
+          operation: "upsert-many",
+        });
+      }
+    }
+    // Two items for one document id collapse to the last one, so a batch never
+    // queues the same reference twice. The local repository also folds items
+    // that land on the same row by fingerprint; ids are all Firestore has.
+    const unique = [...new Map(items.map((item) => [item.id.trim(), item])).values()];
+    const written: T[] = [];
+    const rejected: string[] = [];
+    let committed = 0;
+    let failure: unknown = null;
+    try {
+      const firestore = ensureFirebase();
+      const target = await this.collectionForUser();
+      // Normalise once: the creation dates are looked up for exactly the
+      // documents that are about to be written.
+      const prepared = unique.map((item) => {
+        const id = item.id.trim();
+        return { id, current: this.normalize({ ...item, id }) };
+      });
+      const storedCreatedAt = await this.createdAtFor(target, prepared);
+      const payloadFor = ({ id, current }: (typeof prepared)[number]) => {
+        const existing = storedCreatedAt.get(id);
+        const createdAt = current.createdAt ?? normalizeFirestoreValue(existing);
+        return {
+          data: removeUndefined({
+            ...current,
+            createdAt: current.createdAt ?? existing ?? serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          }) as DocumentData,
+          stored: {
+            ...current,
+            createdAt: typeof createdAt === "string" ? createdAt : nowIso(),
+            updatedAt: nowIso(),
+          },
+        };
+      };
+      for (let offset = 0; offset < prepared.length; offset += FIREBASE_BATCH_SIZE) {
+        const chunk = prepared.slice(offset, offset + FIREBASE_BATCH_SIZE);
+        const batch = writeBatch(firestore);
+        const payloads = chunk.map(payloadFor);
+        payloads.forEach((payload, at) => batch.set(doc(target, chunk[at].id), payload.data));
+        try {
+          await batch.commit();
+          committed += chunk.length;
+          written.push(...payloads.map((payload) => payload.stored));
+        } catch (error) {
+          failure ??= error;
+          // Sign-in and rule failures apply to the whole request, so retrying
+          // document by document would just repeat them a few hundred times.
+          if (appliesToEveryWrite(error)) throw error;
+          // Otherwise the batch is atomic and one document the rules reject
+          // takes the other 399 with it. Write them singly to keep the good
+          // rows, a wave at a time so a long chunk does not block the tab.
+          let refusedHere = 0;
+          for (let at = 0; at < payloads.length; at += CONCURRENT_READS) {
+            const wave = payloads.slice(at, at + CONCURRENT_READS);
+            const outcomes = await Promise.all(
+              wave.map(async (payload, offsetInWave) => {
+                const id = chunk[at + offsetInWave].id;
+                try {
+                  await setDoc(doc(target, id), payload.data);
+                  return { stored: payload.stored, id: undefined };
+                } catch {
+                  return { stored: undefined, id };
+                }
+              }),
+            );
+            for (const outcome of outcomes) {
+              if (outcome.stored) {
+                committed += 1;
+                written.push(outcome.stored);
+              } else if (outcome.id) {
+                refusedHere += 1;
+                rejected.push(outcome.id);
+              }
+            }
+          }
+          // Every document refused means the cause was not this chunk's data.
+          if (refusedHere === payloads.length) throw error;
+        }
+      }
+      if (rejected.length) {
+        throw new RepositoryError(
+          `${rejected.length}건을 Firebase가 거부했습니다. (${rejected.slice(0, 3).join(", ")}${rejected.length > 3 ? " 외" : ""})`,
+          { code: "firebase/write-rejected", operation: "upsert-many", cause: failure, alreadySaved: committed },
+        );
+      }
+      return written;
+    } catch (error) {
+      if (error instanceof RepositoryError) throw error;
+      // Earlier chunks are already in Firestore; the caller adds them to its own
+      // tally so the user is told once how much of the import landed.
+      throw new RepositoryError("Firebase에 기록을 저장하지 못했습니다.", {
+        code: "firebase/write-failed",
+        operation: "upsert-many",
+        cause: error,
+        alreadySaved: committed,
+      });
+    }
+  }
+
+  /**
+   * Stored creation dates for the documents about to be written. Reading them
+   * by id costs one query per 30 documents and never depends on how large the
+   * collection has grown.
+   */
+  private async createdAtFor(
+    target: Awaited<ReturnType<FirebaseRepository<T>["collectionForUser"]>>,
+    items: { id: string; current: T }[],
+  ): Promise<Map<string, unknown>> {
+    const ids = items.filter((item) => !item.current.createdAt).map((item) => item.id);
+    const chunks: string[][] = [];
+    for (let offset = 0; offset < ids.length; offset += DOCUMENT_ID_QUERY_LIMIT) {
+      chunks.push(ids.slice(offset, offset + DOCUMENT_ID_QUERY_LIMIT));
+    }
+    const stored = new Map<string, unknown>();
+    // A large import would otherwise open hundreds of queries at once and trip
+    // the burst quota before a single record is written.
+    for (let offset = 0; offset < chunks.length; offset += CONCURRENT_READS) {
+      const snapshots = await Promise.all(
+        chunks
+          .slice(offset, offset + CONCURRENT_READS)
+          .map((chunk) => getDocs(query(target, where(documentId(), "in", chunk)))),
+      );
+      for (const snapshot of snapshots) {
+        for (const entry of snapshot.docs) stored.set(entry.id, entry.data().createdAt);
+      }
+    }
+    return stored;
+  }
+
   async remove(id: string): Promise<void> {
     if (!id.trim()) return;
     try {
@@ -380,9 +540,9 @@ export async function migrateLegacyTransactionsToFirebase(
     return !remoteFingerprints.has(item.fingerprint);
   });
   let uploaded = 0;
-  for (let offset = 0; offset < pending.length; offset += 400) {
+  for (let offset = 0; offset < pending.length; offset += FIREBASE_BATCH_SIZE) {
     const batch = writeBatch(firestore);
-    for (const item of pending.slice(offset, offset + 400)) {
+    for (const item of pending.slice(offset, offset + FIREBASE_BATCH_SIZE)) {
       const reference = doc(target, item.id);
       batch.set(
         reference,
@@ -397,7 +557,7 @@ export async function migrateLegacyTransactionsToFirebase(
     }
     if (pending.length) {
       await batch.commit();
-      uploaded += Math.min(400, pending.length - offset);
+      uploaded += Math.min(FIREBASE_BATCH_SIZE, pending.length - offset);
     }
   }
   storageSet(markerStorage, firebaseMigrationKey(userId), "true");

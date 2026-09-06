@@ -6,7 +6,7 @@ import type {
   WorkItem,
 } from "./domain";
 import { type IncomeDetails, type SavingsAssetType } from "./domain";
-import type { DomainRepositories } from "./repository-types";
+import { RepositoryError, type DomainRepositories } from "./repository-types";
 
 export type WorkbookCell = string | number | boolean | Date | null | undefined;
 export type WorkbookRows = WorkbookCell[][];
@@ -1194,6 +1194,24 @@ export async function previewXlsxImport(
 
 export const previewImport = previewXlsxImport;
 
+/**
+ * Groups are written one after another, and a failing batch may itself have
+ * committed part of its chunks, so a failure has to say how much of the import
+ * survived. The cause's own code is kept: telling a rejected row from a dropped
+ * connection is what decides whether retrying helps.
+ */
+export function partialSaveError(error: unknown, savedBeforeFailure: number): Error {
+  const alreadySaved = savedBeforeFailure + (error instanceof RepositoryError ? error.alreadySaved ?? 0 : 0);
+  if (!alreadySaved) return error instanceof Error ? error : new Error(String(error));
+  const reason = error instanceof Error ? error.message : "기록을 저장하지 못했습니다.";
+  return new RepositoryError(`${reason} ${alreadySaved}건은 이미 저장되었습니다.`, {
+    code: error instanceof RepositoryError ? error.code : "xlsx/save-failed",
+    operation: "import",
+    cause: error,
+    alreadySaved,
+  });
+}
+
 async function saveRecords(
   preview: XlsxImportPreview,
   repositories: DomainRepositories,
@@ -1210,21 +1228,31 @@ async function saveRecords(
   );
   let skippedExisting = 0;
   const saved = { transactions: 0, savingsAccounts: 0, stockOrders: 0, workItems: 0 };
-  const groups: Array<[DomainEntity[], (item: DomainEntity) => Promise<DomainEntity>, Set<string>, keyof typeof saved]> = [
-    [preview.transactions, (item) => repositories.transactions.upsert(item as Transaction), sets[0], "transactions"],
-    [preview.savingsAccounts, (item) => repositories.savingsAccounts.upsert(item as SavingsAccount), sets[1], "savingsAccounts"],
-    [preview.stockOrders, (item) => repositories.stockOrders.upsert(item as StockOrder), sets[2], "stockOrders"],
-    [preview.workItems, (item) => repositories.workItems.upsert(item as WorkItem), sets[3], "workItems"],
+  const groups: Array<[DomainEntity[], (items: DomainEntity[]) => Promise<DomainEntity[]>, Set<string>, keyof typeof saved]> = [
+    [preview.transactions, (items) => repositories.transactions.upsertMany(items as Transaction[]), sets[0], "transactions"],
+    [preview.savingsAccounts, (items) => repositories.savingsAccounts.upsertMany(items as SavingsAccount[]), sets[1], "savingsAccounts"],
+    [preview.stockOrders, (items) => repositories.stockOrders.upsertMany(items as StockOrder[]), sets[2], "stockOrders"],
+    [preview.workItems, (items) => repositories.workItems.upsertMany(items as WorkItem[]), sets[3], "workItems"],
   ];
+  const savedSoFar = () => Object.values(saved).reduce((sum, value) => sum + value, 0);
   for (const [items, save, known, key] of groups) {
+    // Collect first: writing one at a time re-serialises the whole store and
+    // re-renders every subscriber per record, which is quadratic on a big sheet.
+    const pending: DomainEntity[] = [];
     for (const item of items) {
       if (item.fingerprint && known.has(item.fingerprint)) {
         skippedExisting += 1;
         continue;
       }
-      await save(item);
       if (item.fingerprint) known.add(item.fingerprint);
-      saved[key] += 1;
+      pending.push(item);
+    }
+    if (!pending.length) continue;
+    try {
+      // Count what the repository stored, not what was handed to it.
+      saved[key] += (await save(pending)).length;
+    } catch (error) {
+      throw partialSaveError(error, savedSoFar());
     }
   }
   return { ...saved, skippedExisting };
