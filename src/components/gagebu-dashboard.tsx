@@ -1464,7 +1464,6 @@ function TaskEditModal({
   const dialogRef = useDialogFocus(Boolean(task), onClose);
 
   const taskId = task?.id;
-  const storedCategory = task?.category;
 
   // Keyed on the id, not the row: the caller hands us a fresh object on every
   // store update, and re-seeding the draft there would discard what is typed.
@@ -1476,15 +1475,6 @@ function TaskEditModal({
     /* eslint-enable react-hooks/set-state-in-effect */
     // eslint-disable-next-line react-hooks/exhaustive-deps -- a new row for the same task must not reset the draft
   }, [taskId]);
-
-  // A category renamed elsewhere while this dialog is open would otherwise be
-  // written back under its old name when the user saves.
-  useEffect(() => {
-    if (!storedCategory) return;
-    /* eslint-disable react-hooks/set-state-in-effect -- follow a rename that landed from the store */
-    setDraft((previous) => (previous.category === storedCategory ? previous : { ...previous, category: storedCategory }));
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, [storedCategory]);
 
   if (!task) return null;
   const update = <K extends keyof TaskDraft>(key: K, value: TaskDraft[K]) => {
@@ -1577,7 +1567,7 @@ function CategoryManagerModal({
         return <li key={category.id} className="rounded-2xl border border-line bg-card-soft p-2.5">
           <div className="flex items-center gap-2">
             <label className="sr-only" htmlFor={`category-name-${category.id}`}>카테고리 이름</label>
-            <input id={`category-name-${category.id}`} value={nameOf(category)} onChange={(event) => setNames((previous) => ({ ...previous, [category.id]: event.target.value }))} className={`${fieldClass} h-10`} />
+            <input id={`category-name-${category.id}`} maxLength={60} value={nameOf(category)} onChange={(event) => setNames((previous) => ({ ...previous, [category.id]: event.target.value }))} className={`${fieldClass} h-10`} />
             <button type="button" disabled={saving || !renamed || !nameOf(category).trim()} onClick={() => onRename(category, nameOf(category).trim())} className="inline-flex h-10 shrink-0 items-center gap-1 rounded-xl bg-emerald-400 px-3 text-xs font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"><Icon name="check" size={14} /> 저장</button>
             <button type="button" disabled={saving || used > 0 || categories.length <= 1} onClick={() => onDelete(category)} aria-label={`${category.name} 삭제`} className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-rose-400/20 text-rose-200 transition hover:bg-rose-500/10 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"><Icon name="trash" size={15} /></button>
           </div>
@@ -1586,7 +1576,7 @@ function CategoryManagerModal({
       })}</ul>
       <form onSubmit={(event) => { event.preventDefault(); if (!newName.trim()) return; onCreate(newName.trim()); setNewName(""); }} className="mt-4 flex items-center gap-2 border-t border-line pt-4">
         <label className="sr-only" htmlFor="category-new-name">새 카테고리 이름</label>
-        <input id="category-new-name" value={newName} onChange={(event) => setNewName(event.target.value)} className={`${fieldClass} h-10`} placeholder="예: 온라인 강의" />
+        <input id="category-new-name" maxLength={60} value={newName} onChange={(event) => setNewName(event.target.value)} className={`${fieldClass} h-10`} placeholder="예: 온라인 강의" />
         <button type="submit" disabled={saving || !newName.trim()} className="inline-flex h-10 shrink-0 items-center gap-1 rounded-xl bg-sky-400 px-3.5 text-xs font-semibold text-slate-950 transition hover:bg-sky-300 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"><Icon name="plus" size={14} /> 추가</button>
       </form>
     </div>
@@ -1672,7 +1662,7 @@ function TasksPanel({
       </section>
       <TaskDetailModal task={detailTask} onClose={() => setDetailTaskId(null)} onEdit={(task) => { setDetailTaskId(null); setEditingTaskId(task.id); }} onDelete={(task) => { setDetailTaskId(null); setDeletingTaskId(task.id); }} />
       {managingCategories && <CategoryManagerModal categories={categories} usageCounts={categoryUsage} saving={saving} onClose={() => setManagingCategories(false)} onCreate={onCreateCategory} onRename={onRenameCategory} onDelete={onDeleteCategory} />}
-      <TaskEditModal task={editingTask} categoryOptions={categoryOptions} sideIncomeRecords={sideIncomeRecords} saving={saving} onClose={() => setEditingTaskId(null)} onSave={(nextDraft) => { if (!editingTask) return; const design = isDesignWork(nextDraft.category); onUpdateTask({ ...editingTask, title: nextDraft.title.trim(), category: nextDraft.category, workDate: nextDraft.workDate || undefined, course: design ? nextDraft.course.trim() || undefined : undefined, session: design ? nextDraft.session.trim() || undefined : undefined, clientOrSchool: nextDraft.clientOrSchool.trim() || undefined, amount: Number(nextDraft.amount) || undefined, sentAt: nextDraft.sentAt || undefined, memo: nextDraft.note.trim() || undefined, description: nextDraft.note.trim() || undefined, status: nextDraft.status, sideIncomeTransactionId: nextDraft.sideIncomeTransactionId || undefined }); setEditingTaskId(null); }} />
+      <TaskEditModal task={editingTask} categoryOptions={categoryOptions} sideIncomeRecords={sideIncomeRecords} saving={saving} onClose={() => setEditingTaskId(null)} onSave={(nextDraft) => { if (!editingTask) return; const category = categoryOptions.includes(nextDraft.category) ? nextDraft.category : taskCategory(editingTask); const design = isDesignWork(category); onUpdateTask({ ...editingTask, title: nextDraft.title.trim(), category, workDate: nextDraft.workDate || undefined, course: design ? nextDraft.course.trim() || undefined : undefined, session: design ? nextDraft.session.trim() || undefined : undefined, clientOrSchool: nextDraft.clientOrSchool.trim() || undefined, amount: Number(nextDraft.amount) || undefined, sentAt: nextDraft.sentAt || undefined, memo: nextDraft.note.trim() || undefined, description: nextDraft.note.trim() || undefined, status: nextDraft.status, sideIncomeTransactionId: nextDraft.sideIncomeTransactionId || undefined }); setEditingTaskId(null); }} />
       <TaskDeleteDialog task={deletingTask} onClose={() => setDeletingTaskId(null)} onConfirm={() => { if (deletingTask) onDeleteTask(deletingTask); setDeletingTaskId(null); setDetailTaskId(null); }} />
     </div>
   );
