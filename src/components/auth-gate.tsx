@@ -45,12 +45,12 @@ export function AuthAccountControls() {
   if (!user) return null;
 
   return (
-    <div className="flex min-w-0 shrink-0 items-center gap-2 rounded-2xl border border-line bg-card px-2.5 py-1.5 text-xs text-body backdrop-blur">
+    <div className="flex min-w-0 shrink-0 items-center gap-2 rounded-2xl border border-line bg-card px-2.5 py-0 text-xs text-body backdrop-blur lg:py-1.5">
       <span className="hidden max-w-40 truncate 2xl:inline">{user.email}</span>
       <button
         type="button"
         onClick={() => auth && void signOut(auth)}
-        className="shrink-0 rounded-xl border border-line px-2.5 py-1.5 text-body transition hover:border-line-strong hover:bg-hover"
+        className="min-h-11 shrink-0 rounded-xl border border-line px-2.5 py-1.5 text-body transition hover:border-line-strong hover:bg-hover lg:min-h-0"
       >
         로그아웃
       </button>
