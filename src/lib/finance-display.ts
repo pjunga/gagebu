@@ -84,6 +84,41 @@ export function totalByCurrency<T extends { amount: number; currency?: string }>
   return { base, foreign: [...foreign.values()].sort((left, right) => left.code.localeCompare(right.code)) };
 }
 
+function pad(value: number, length = 2): string {
+  return String(value).padStart(length, "0");
+}
+
+function toLocalIsoDate(date: Date): string {
+  return `${pad(date.getFullYear(), 4)}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+/**
+ * Shifts a date by whole months. Reading the parts back through toISOString()
+ * moves the day one back in timezones ahead of UTC, so the parts are read local.
+ */
+export function addMonths(dateValue: string, amount: number): string {
+  const date = new Date(`${dateValue}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return dateValue;
+  date.setMonth(date.getMonth() + amount);
+  return toLocalIsoDate(date);
+}
+
+export type AssetStatus = "active" | "maturity-soon" | "matured" | "closed";
+
+/**
+ * Only the ending of an account is a stored fact; the rest follows from the
+ * maturity date and today, so it is derived on every read instead of saved.
+ */
+export function savingsStatus(
+  account: { closedAt?: string; maturityDate?: string },
+  today: string,
+): AssetStatus {
+  if (account.closedAt) return "closed";
+  if (!account.maturityDate) return "active";
+  if (account.maturityDate < today) return "matured";
+  return account.maturityDate <= addMonths(today, 1) ? "maturity-soon" : "active";
+}
+
 /**
  * A savings account belongs to a year while it is open, not only in the year it
  * was opened; a one-off record (a stock order) belongs to the year it happened.

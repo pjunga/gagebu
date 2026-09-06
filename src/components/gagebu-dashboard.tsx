@@ -20,6 +20,9 @@ import {
   previousMonthOf,
   relativeDay,
   totalByCurrency,
+  addMonths,
+  savingsStatus,
+  type AssetStatus,
 } from "@/lib/finance-display";
 import { createDataRepositories } from "@/lib/repositories";
 import {
@@ -37,7 +40,7 @@ export type EntryKind =
   | "side-income"
   | "savings"
   | "stock-order";
-export type AssetStatus = "active" | "maturity-soon" | "closed";
+export type { AssetStatus };
 export type WorkStatus = WorkItemStatus;
 
 export type FinanceRecord = {
@@ -151,8 +154,12 @@ const institutionOptions = ["전체 기관", "주거래 은행", "저축 은행"
 const assetStatusLabels: Record<AssetStatus, string> = {
   active: "운영 중",
   "maturity-soon": "만기 임박",
+  matured: "만기 도래",
   closed: "종료",
 };
+
+/** The only statuses a user picks; the rest follow from the maturity date. */
+const savingsStatusOptions: AssetStatus[] = ["active", "closed"];
 
 const currency = (value: number, currencyCode?: string) => formatMoney(value, currencyCode);
 
@@ -180,12 +187,6 @@ const monthText = (value: string) => {
   return Number.isNaN(date.getTime())
     ? value
     : date.toLocaleDateString("ko-KR", { year: "numeric", month: "long" });
-};
-
-const addMonths = (dateValue: string, amount: number) => {
-  const date = new Date(`${dateValue}T00:00:00`);
-  date.setMonth(date.getMonth() + amount);
-  return date.toISOString().slice(0, 10);
 };
 
 const defaultDraft = (kind: EntryKind = "expense"): EntryDraft => ({
@@ -267,6 +268,7 @@ function StatusBadge({ status }: { status?: AssetStatus | WorkStatus }) {
   const labels: Record<string, string> = {
     active: "운영 중",
     "maturity-soon": "만기 임박",
+    matured: "만기 도래",
     closed: "종료",
     "planned": "예정",
     "in-progress": "진행 중",
@@ -280,6 +282,7 @@ function StatusBadge({ status }: { status?: AssetStatus | WorkStatus }) {
   const styles: Record<string, string> = {
     active: "bg-emerald-500/10 text-emerald-200 ring-emerald-400/20",
     "maturity-soon": "bg-amber-500/10 text-amber-200 ring-amber-400/20",
+    matured: "bg-rose-500/10 text-rose-200 ring-rose-400/20",
     closed: "bg-slate-500/10 text-body ring-slate-400/20",
     planned: "bg-slate-500/10 text-body ring-slate-400/20",
     "in-progress": "bg-sky-500/10 text-sky-200 ring-sky-400/20",
@@ -810,7 +813,7 @@ function EntryModal({
                   <FieldLabel htmlFor="savings-balance">현재 잔액</FieldLabel>
                   <div className="relative"><input id="savings-balance" type="number" min="0" step="1000" value={draft.balance} onChange={(event) => update("balance", event.target.value)} className={`${fieldClass} pr-12 text-right tabular-nums`} placeholder="예치 금액과 같으면 비워두세요" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">원</span></div>
                 </div>
-                <SelectField id="savings-status" label="상태" value={assetStatusLabels[draft.status]} onChange={(value) => update("status", (Object.keys(assetStatusLabels) as AssetStatus[]).find((status) => assetStatusLabels[status] === value) || "active")} options={Object.values(assetStatusLabels)} />
+                <SelectField id="savings-status" label="상태" value={assetStatusLabels[savingsStatusOptions.includes(draft.status) ? draft.status : "active"]} onChange={(value) => update("status", savingsStatusOptions.find((status) => assetStatusLabels[status] === value) || "active")} options={savingsStatusOptions.map((status) => assetStatusLabels[status])} />
               </>
             )}
 
@@ -851,7 +854,6 @@ function EntryModal({
                   </div>
                 </fieldset>
                 <div className="sm:col-span-2">
-                  <SelectField id="stock-status" label="주문 상태" value={assetStatusLabels[draft.status]} onChange={(value) => update("status", (Object.keys(assetStatusLabels) as AssetStatus[]).find((status) => assetStatusLabels[status] === value) || "active")} options={Object.values(assetStatusLabels)} />
                 </div>
               </>
             )}
@@ -1617,7 +1619,7 @@ export default function GagebuDashboard() {
       monthlyContribution: account.monthlyContribution,
       principal: account.principal,
       balance: account.balance,
-      status: account.maturityDate && account.maturityDate <= addMonths(currentDate(), 1) ? "maturity-soon" : "active",
+      status: savingsStatus(account, currentDate()),
       note: account.memo,
     }));
     const stockRecords: FinanceRecord[] = stockOrders.map((order) => ({
@@ -1688,6 +1690,10 @@ export default function GagebuDashboard() {
           monthlyContribution: draft.monthlyContribution ? Number(draft.monthlyContribution) : undefined,
           startDate: draft.date,
           maturityDate: draft.maturityDate || undefined,
+          closedAt:
+            draft.status === "closed"
+              ? savingsAccounts.find((account) => account.id === id)?.closedAt || currentDate()
+              : undefined,
           memo: draft.note.trim() || undefined,
         });
       } else if (draft.kind === "stock-order") {

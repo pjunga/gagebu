@@ -3,6 +3,8 @@ import test from "node:test";
 import {
   categorySubLabel,
   formatMoney,
+  addMonths,
+  savingsStatus,
   isAssetInYear,
   isForeignCurrency,
   previousMonthOf,
@@ -92,4 +94,20 @@ test("formatMoney survives a currency code Intl cannot parse", () => {
   assert.equal(formatMoney(1217.5, "US$"), "US$ 1,217.5");
   assert.equal(formatMoney(1000, 0 as unknown as string), "₩1,000");
   assert.equal(formatMoney(1000, "   "), "₩1,000");
+});
+
+test("addMonths keeps the day in timezones ahead of UTC", () => {
+  assert.equal(addMonths("2026-09-06", 1), "2026-10-06");
+  assert.equal(addMonths("2026-12-06", 1), "2027-01-06");
+  assert.equal(addMonths("2026-09-06", -1), "2026-08-06");
+});
+
+test("savingsStatus stores only the ending and derives the rest", () => {
+  const today = "2026-09-06";
+  assert.equal(savingsStatus({ closedAt: "2026-03-01", maturityDate: "2027-01-01" }, today), "closed");
+  assert.equal(savingsStatus({ maturityDate: "2026-09-05" }, today), "matured");
+  assert.equal(savingsStatus({ maturityDate: "2026-09-20" }, today), "maturity-soon");
+  assert.equal(savingsStatus({ maturityDate: "2026-10-06" }, today), "maturity-soon");
+  assert.equal(savingsStatus({ maturityDate: "2027-01-01" }, today), "active");
+  assert.equal(savingsStatus({}, today), "active");
 });
