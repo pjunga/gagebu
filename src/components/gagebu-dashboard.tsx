@@ -1012,7 +1012,7 @@ function ImportModal({
   open: boolean;
   saving: boolean;
   onClose: () => void;
-  onImport: (file: File, preview: ImportPreview) => void;
+  onImport: (file: File, preview: ImportPreview) => Promise<string | null>;
   existingFingerprints?: string[];
 }) {
   const [stage, setStage] = useState<"select" | "preview">("select");
@@ -1048,6 +1048,8 @@ function ImportModal({
 
   const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const selected = event.target.files?.[0];
+    // Clear the control so picking the same path again still fires a change.
+    event.target.value = "";
     if (!selected) return;
     const isSupported = /\.xlsx$/i.test(selected.name);
     if (!isSupported) {
@@ -1124,9 +1126,10 @@ function ImportModal({
                 <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-line-strong bg-surface accent-emerald-400" />
                 <span className="text-xs leading-5 text-amber-100/80">미리보기 결과를 확인했으며, 인식된 내역을 저장하겠습니다. 중복·건너뛸 행은 저장 대상에서 제외됩니다.</span>
               </label>
+              {error && <p role="alert" className="mt-3 text-xs text-rose-200">{error}</p>}
               <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <button type="button" onClick={onClose} className="h-11 rounded-2xl px-5 text-sm font-medium text-muted transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">취소</button>
-                <button type="button" disabled={!confirmed || !file || saving} onClick={() => file && onImport(file, preview)} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"><Icon name="upload" size={16} /> 확인 후 저장</button>
+                <button type="button" onClick={onClose} disabled={saving} className="h-11 rounded-2xl px-5 text-sm font-medium text-muted transition hover:bg-card-strong hover:text-ink disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">취소</button>
+                <button type="button" disabled={!confirmed || !file || saving} onClick={async () => { if (!file) return; setError(""); const message = await onImport(file, preview); if (message) setError(message); }} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200">{saving ? <Icon name="refresh" size={16} className="animate-spin" /> : <Icon name="upload" size={16} />} 확인 후 저장</button>
               </div>
             </div>
           )}
@@ -1559,6 +1562,7 @@ export default function GagebuDashboard() {
   const [toast, setToast] = useState("");
   const [entryOpen, setEntryOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<FinanceRecord | null>(null);
+  const savingRef = useRef(false);
   const [entryDraft, setEntryDraft] = useState<EntryDraft>(defaultDraft());
   const [detailRecord, setDetailRecord] = useState<FinanceRecord | null>(null);
   const [deleteRecord, setDeleteRecord] = useState<FinanceRecord | null>(null);
@@ -1853,14 +1857,17 @@ export default function GagebuDashboard() {
     }
   };
 
-  const closeImport = useCallback(() => setImportOpen(false), []);
+  const closeImport = useCallback(() => setImportOpen((open) => (savingRef.current ? open : false)), []);
 
-  const handleImport = async (file: File, preview: ImportPreview) => {
+  /** Reports the failure back to the modal instead of closing it, so a retry
+   *  keeps the preview the user already confirmed. */
+  const handleImport = async (file: File, preview: ImportPreview): Promise<string | null> => {
     setSaving(true);
-    setError("");
+    savingRef.current = true;
     try {
       const result = await importXlsxFile(file, repositories, { existingFingerprints });
       const savedTotal = Object.values(result.saved).reduce((sum, value) => sum + value, 0);
+      setImportOpen(false);
       setToast(
         savedTotal
           ? `${savedTotal}건을 저장했습니다${result.skippedExisting ? ` · 중복 ${result.skippedExisting}건 제외` : ""}.`
@@ -1868,10 +1875,11 @@ export default function GagebuDashboard() {
             ? "새로 저장할 내역이 없습니다. 중복 내역을 확인해보세요."
             : "저장할 데이터 행이 없습니다.",
       );
+      return null;
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : "엑셀 내역을 저장하지 못했습니다.");
+      return reason instanceof Error ? reason.message : "엑셀 내역을 저장하지 못했습니다.";
     } finally {
-      setImportOpen(false);
+      savingRef.current = false;
       setSaving(false);
     }
   };
