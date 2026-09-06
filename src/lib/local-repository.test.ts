@@ -52,3 +52,20 @@ test("upsert matches an existing record by fingerprint when the id is new", asyn
   assert.equal(updated.createdAt, created.createdAt);
   assert.equal((await repositoryUnderTest.list()).length, 1);
 });
+
+test("two subscriptions survive independently when they share a function", async () => {
+  const repositoryUnderTest = repository();
+  const received: Transaction[][] = [];
+  const onData = (items: Transaction[]) => void received.push(items);
+
+  // React mounts an effect twice in StrictMode and passes the same setState
+  // function both times; the first mount's unsubscribe must not stop the second.
+  const first = repositoryUnderTest.subscribe(onData);
+  const second = repositoryUnderTest.subscribe(onData);
+  (await first)();
+  await second;
+
+  const before = received.length;
+  await repositoryUnderTest.upsert(transaction());
+  assert.equal(received.length - before, 1);
+});
