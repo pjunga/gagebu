@@ -13,6 +13,7 @@ pnpm install
 pnpm dev      # http://localhost:3000
 pnpm build    # 프로덕션 빌드
 pnpm lint
+pnpm test     # node:test 기반 도메인·임포트 테스트
 ```
 
 ## Firebase 설정
