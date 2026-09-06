@@ -205,15 +205,18 @@ export class FirebaseRepository<T extends BaseEntity>
       const target = await this.collectionForUser();
       const existing = await getDoc(doc(target, id));
       const current = this.normalize({ ...item, id });
+      const storedCreatedAt = existing.data()?.createdAt;
       const payload = removeUndefined({
         ...current,
-        createdAt: current.createdAt ?? existing.data()?.createdAt ?? serverTimestamp(),
+        createdAt: current.createdAt ?? storedCreatedAt ?? serverTimestamp(),
         updatedAt: serverTimestamp(),
       }) as DocumentData;
       await setDoc(doc(target, id), payload);
+      const createdAt = current.createdAt ?? normalizeFirestoreValue(storedCreatedAt);
       return {
         ...current,
-        createdAt: current.createdAt ?? nowIso(),
+        // Report the date that was actually written, not today's.
+        createdAt: typeof createdAt === "string" ? createdAt : nowIso(),
         updatedAt: nowIso(),
       };
     } catch (error) {

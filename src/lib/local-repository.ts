@@ -370,21 +370,22 @@ export class LocalStorageRepository<T extends BaseEntity>
       });
     }
     const current = cloneStored(this.normalize({ ...item, id }));
+    const existingIndex = this.items.findIndex((candidate) => candidate.id === id);
+    const fingerprintIndex =
+      existingIndex >= 0 || !current.fingerprint
+        ? -1
+        : this.items.findIndex((candidate) => candidate.fingerprint === current.fingerprint);
+    const stored = this.items[existingIndex >= 0 ? existingIndex : fingerprintIndex];
     const updated: T = {
       ...current,
-      createdAt: current.createdAt ?? nowIso(),
+      // A record keeps the date it was first stored, the same way Firebase
+      // reads it back off the existing document.
+      createdAt: current.createdAt ?? stored?.createdAt ?? nowIso(),
       updatedAt: nowIso(),
     };
-    const existingIndex = this.items.findIndex((candidate) => candidate.id === id);
-    if (existingIndex >= 0) {
-      this.items[existingIndex] = updated;
-    } else {
-      const fingerprintIndex = updated.fingerprint
-        ? this.items.findIndex((candidate) => candidate.fingerprint === updated.fingerprint)
-        : -1;
-      if (fingerprintIndex >= 0) this.items[fingerprintIndex] = updated;
-      else this.items.push(updated);
-    }
+    if (existingIndex >= 0) this.items[existingIndex] = updated;
+    else if (fingerprintIndex >= 0) this.items[fingerprintIndex] = updated;
+    else this.items.push(updated);
     this.persist();
     this.emit();
     return cloneStored(updated);
