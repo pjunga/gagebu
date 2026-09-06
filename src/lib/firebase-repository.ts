@@ -188,6 +188,11 @@ export class FirebaseRepository<T extends BaseEntity>
     return this.upsert(item);
   }
 
+  /**
+   * Replaces the stored document, like the local repository does. Merging
+   * instead would make a field impossible to clear: the caller passes the whole
+   * record, so a field it leaves out is a field it means to drop.
+   */
   async upsert(item: T): Promise<T> {
     const id = item.id?.trim();
     if (!id) {
@@ -200,15 +205,18 @@ export class FirebaseRepository<T extends BaseEntity>
       const target = await this.collectionForUser();
       const existing = await getDoc(doc(target, id));
       const current = this.normalize({ ...item, id });
+      const storedCreatedAt = existing.data()?.createdAt;
       const payload = removeUndefined({
         ...current,
-        createdAt: current.createdAt ?? (existing.exists() ? undefined : serverTimestamp()),
+        createdAt: current.createdAt ?? storedCreatedAt ?? serverTimestamp(),
         updatedAt: serverTimestamp(),
       }) as DocumentData;
-      await setDoc(doc(target, id), payload, { merge: true });
+      await setDoc(doc(target, id), payload);
+      const createdAt = current.createdAt ?? normalizeFirestoreValue(storedCreatedAt);
       return {
         ...current,
-        createdAt: current.createdAt ?? nowIso(),
+        // Report the date that was actually written, not today's.
+        createdAt: typeof createdAt === "string" ? createdAt : nowIso(),
         updatedAt: nowIso(),
       };
     } catch (error) {

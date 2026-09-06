@@ -9,6 +9,7 @@ import {
   type SavingsAccount,
   type SavingsAssetType,
   type StockOrder,
+  type RecordSource,
   type Transaction as DomainTransaction,
   type WorkItem as DomainWorkItem,
   type WorkItemStatus,
@@ -188,6 +189,15 @@ const monthText = (value: string) => {
     ? value
     : date.toLocaleDateString("ko-KR", { year: "numeric", month: "long" });
 };
+
+/**
+ * The salary form collects the net pay in its own field, so reading
+ * draft.amount there saves a zero. Validation and saving share this.
+ */
+const draftAmount = (draft: EntryDraft): number =>
+  draft.kind === "stock-order"
+    ? Number(draft.quantity) * Number(draft.unitPrice)
+    : Number(draft.kind === "salary" ? draft.netAmount : draft.amount);
 
 const defaultDraft = (kind: EntryKind = "expense"): EntryDraft => ({
   kind,
@@ -586,10 +596,7 @@ function EntryModal({
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const amount =
-      draft.kind === "stock-order"
-        ? Number(draft.quantity) * Number(draft.unitPrice)
-        : Number(draft.kind === "salary" ? draft.netAmount : draft.amount);
+    const amount = draftAmount(draft);
     if (!draft.title.trim()) {
       setValidationError("내역 이름을 입력해주세요.");
       return;
@@ -1324,15 +1331,20 @@ function AssetsPanel({
   const [institution, setInstitution] = useState("전체 기관");
   const [status, setStatus] = useState("전체 상태");
   const assets = records.filter((record) => record.kind === "savings" || record.kind === "stock-order");
-  const visible = assets.filter((record) => {
+  // The tiles report the year's assets; only the list below narrows by status.
+  const scoped = assets.filter((record) => {
     if (!isAssetInYear({ ...record, recurring: record.kind === "savings" }, year)) return false;
     if (institution !== "전체 기관" && record.institution !== institution) return false;
-    if (status !== "전체 상태" && record.status !== status) return false;
     return true;
   });
-  const visibleTotals = totalByCurrency(visible);
-  const savings = totalByCurrency(visible.filter((record) => record.kind === "savings")).base;
-  const stockTotals = totalByCurrency(visible.filter((record) => record.kind === "stock-order"));
+  // A stock order has no lifecycle, so a status can only ever exclude it.
+  const visible =
+    status === "전체 상태"
+      ? scoped
+      : scoped.filter((record) => record.kind === "savings" && record.status === status);
+  const visibleTotals = totalByCurrency(scoped);
+  const savings = totalByCurrency(scoped.filter((record) => record.kind === "savings")).base;
+  const stockTotals = totalByCurrency(scoped.filter((record) => record.kind === "stock-order"));
   const stocks = stockTotals.base;
   const foreignNote = (foreign: typeof visibleTotals.foreign) =>
     foreign.length ? `${foreign.map((entry) => `${entry.code} ${entry.count}건`).join(" · ")} 별도` : "";
@@ -1601,6 +1613,10 @@ export default function GagebuDashboard() {
         category: transaction.category,
         source: transaction.incomeDetails?.employer || transaction.incomeDetails?.payer || transaction.incomeDetails?.sourceName,
         account: transaction.type === "expense" ? undefined : transaction.incomeDetails?.paymentDate,
+        payMonth: transaction.incomeDetails?.month,
+        count: transaction.incomeDetails?.count,
+        netAmount: transaction.incomeDetails?.netAmount,
+        workItemId: transaction.workItemId ?? transaction.incomeDetails?.workItemId,
         note: transaction.incomeDetails?.note,
       };
     });
@@ -1633,7 +1649,6 @@ export default function GagebuDashboard() {
       unitPrice: order.unitPrice,
       principalOrBalance: order.principalOrBalance,
       currency: order.currency,
-      status: "active",
       note: order.memo,
     }));
     return [...transactionRecords, ...savingsRecords, ...stockRecords].sort((left, right) => right.date.localeCompare(left.date));
@@ -1661,6 +1676,9 @@ export default function GagebuDashboard() {
     setDetailRecord(null);
   };
 
+  const collectionOf = (kind: EntryKind) =>
+    kind === "savings" ? "savings" : kind === "stock-order" ? "stocks" : "transactions";
+
   const removeExistingRecord = async (record: FinanceRecord) => {
     if (record.kind === "savings") return repositories.savingsAccounts.remove(record.id);
     if (record.kind === "stock-order") return repositories.stockOrders.remove(record.id);
@@ -1668,8 +1686,14 @@ export default function GagebuDashboard() {
   };
 
   const handleSaveDraft = async (draft: EntryDraft) => {
-    const amount = draft.kind === "stock-order" ? Number(draft.quantity) * Number(draft.unitPrice) : Number(draft.amount);
+    const amount = draftAmount(draft);
     const id = editingRecord?.id || createEntityId(draft.kind === "savings" ? "saving" : draft.kind === "stock-order" ? "order" : "transaction");
+    const existingSaving = savingsAccounts.find((account) => account.id === id);
+    const existingOrder = stockOrders.find((order) => order.id === id);
+    const existingTransaction = transactions.find((transaction) => transaction.id === id);
+    // source records where a record came from, not who last touched it, so an
+    // imported record stays imported after the user edits it.
+    const sourceOf = (existing?: { source?: RecordSource }): RecordSource => existing?.source ?? "manual";
     setSaving(true);
     setError("");
     try {
@@ -1677,9 +1701,9 @@ export default function GagebuDashboard() {
         // Same as the stock branch: the local repository replaces the stored item
         // wholesale, so spread the existing account before the form's own fields.
         await repositories.savingsAccounts.upsert({
-          ...savingsAccounts.find((account) => account.id === id),
+          ...existingSaving,
           id,
-          source: "manual",
+          source: sourceOf(existingSaving),
           institution: draft.institution.trim() || "기관 미입력",
           accountName: draft.account.trim() || draft.title.trim() || "예금·적금",
           assetType: draft.assetType,
@@ -1690,7 +1714,7 @@ export default function GagebuDashboard() {
           maturityDate: draft.maturityDate || undefined,
           closedAt:
             draft.status === "closed"
-              ? savingsAccounts.find((account) => account.id === id)?.closedAt || currentDate()
+              ? existingSaving?.closedAt || currentDate()
               : undefined,
           memo: draft.note.trim() || undefined,
         });
@@ -1698,9 +1722,9 @@ export default function GagebuDashboard() {
         // The form does not own every stock-order field (currency, fee), and the
         // local repository replaces the stored item wholesale, so keep the rest.
         await repositories.stockOrders.upsert({
-          ...stockOrders.find((order) => order.id === id),
+          ...existingOrder,
           id,
-          source: "manual",
+          source: sourceOf(existingOrder),
           broker: draft.institution.trim() || undefined,
           ticker: draft.ticker.trim().toUpperCase(),
           name: draft.title.trim() || undefined,
@@ -1715,27 +1739,36 @@ export default function GagebuDashboard() {
       } else {
         const isExpense = draft.kind === "expense";
         await repositories.transactions.upsert({
+          ...existingTransaction,
           id,
-          source: "manual",
+          source: sourceOf(existingTransaction),
           type: isExpense ? "expense" : "income",
           category: isExpense ? draft.category : draft.kind === "salary" ? "급여" : "부수입",
           amount,
           memo: draft.title.trim() || entryLabels[draft.kind],
           date: draft.date,
           ...(isExpense
-            ? { workItemId: undefined }
+            ? { workItemId: undefined, incomeDetails: undefined }
             : {
+                workItemId: draft.workItemId || undefined,
                 incomeDetails: {
+                  ...existingTransaction?.incomeDetails,
                   source: draft.kind === "salary" ? "salary" : "side-income",
                   employer: draft.kind === "salary" ? draft.source.trim() || undefined : undefined,
                   payer: draft.kind === "side-income" ? draft.source.trim() || undefined : undefined,
+                  netAmount: draft.kind === "salary" ? amount : undefined,
+                  count: draft.kind === "side-income" && draft.count ? Number(draft.count) : undefined,
+                  month: draft.payMonth || undefined,
                   paymentDate: draft.account.trim() || undefined,
+                  workItemId: draft.workItemId || undefined,
                   note: draft.note.trim() || undefined,
                 },
               }),
         });
       }
-      if (editingRecord && editingRecord.kind !== draft.kind) await removeExistingRecord(editingRecord);
+      if (editingRecord && collectionOf(editingRecord.kind) !== collectionOf(draft.kind)) {
+        await removeExistingRecord(editingRecord);
+      }
       setEntryOpen(false);
       setEditingRecord(null);
       setToast(editingRecord ? "내역을 수정했습니다." : "내역을 저장했습니다.");
