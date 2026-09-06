@@ -210,20 +210,55 @@ test("upsertMany keeps a row whose id match is later addressed by fingerprint", 
 });
 
 test("a failed write leaves nothing behind for the next reader", async () => {
+  const key = `test:transactions:${Math.random()}`;
   const storage = fakeStorage();
   const failing: StorageLike = {
     ...storage,
-    setItem: (key, value) => {
+    setItem: (storageKey, value) => {
       if (value.includes("붙지 않아야 함")) throw new Error("quota");
-      storage.setItem(key, value);
+      storage.setItem(storageKey, value);
     },
   };
-  const repositoryUnderTest = new LocalStorageRepository<Transaction>({ key: "test:transactions", storage: failing });
+  const repositoryUnderTest = new LocalStorageRepository<Transaction>({ key, storage: failing });
   await repositoryUnderTest.upsert(transaction({ id: "t1" }));
   await assert.rejects(() => repositoryUnderTest.upsertMany([transaction({ id: "t2", memo: "붙지 않아야 함" })]));
 
-  // A repository with no storage falls back to the in-process copy; the
-  // rejected batch must not be waiting for it there.
-  const fallback = new LocalStorageRepository<Transaction>({ key: "test:transactions", storage: null });
-  assert.deepEqual((await fallback.list()).map((item) => item.id), ["t1"]);
+  assert.deepEqual((await repositoryUnderTest.list()).map((item) => item.id), ["t1"]);
+  // A repository with no storage reads the in-process fallback; the rejected
+  // batch must not be waiting for it there.
+  const fallback = new LocalStorageRepository<Transaction>({ key, storage: null });
+  assert.equal((await fallback.list()).some((item) => item.id === "t2"), false);
+});
+
+test("a batch places rows exactly where a sequence of upserts would", async () => {
+  const seeds = [
+    [transaction({ id: "a", fingerprint: "f1" }), transaction({ id: "b", fingerprint: "f1" })],
+    [transaction({ id: "b", fingerprint: "f2" }), transaction({ id: "a", fingerprint: "f1" })],
+    [],
+  ];
+  const batches = [
+    [transaction({ id: "c", fingerprint: "f1", memo: "하나" })],
+    [
+      transaction({ id: "a", fingerprint: "f2", memo: "하나" }),
+      transaction({ id: "b", fingerprint: "f1", memo: "둘" }),
+      transaction({ id: "c", fingerprint: "f2", memo: "셋" }),
+    ],
+    [transaction({ id: "a", fingerprint: "f1" }), transaction({ id: "a", fingerprint: "f3", memo: "덮어씀" })],
+  ];
+  const shape = (items: Transaction[]) => items.map((item) => [item.id, item.fingerprint, item.memo]);
+
+  for (const seed of seeds) {
+    for (const batch of batches) {
+      const batched = repository();
+      const sequential = repository();
+      for (const item of seed) {
+        await batched.upsert(item);
+        await sequential.upsert(item);
+      }
+      await batched.upsertMany(batch);
+      for (const item of batch) await sequential.upsert(item);
+
+      assert.deepEqual(shape(await batched.list()), shape(await sequential.list()));
+    }
+  }
 });

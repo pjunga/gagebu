@@ -33,9 +33,7 @@ export async function subscribeToTransactions(
 ): Promise<Unsubscribe> {
   if (!isFirebaseConfigured) {
     const repository = getLocalTransactions();
-    for (const item of localItems) {
-      await repository.upsert(item);
-    }
+    await repository.upsertMany(localItems);
     return repository.subscribe(onData, (error) => onError(error.message));
   }
 

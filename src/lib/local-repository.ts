@@ -60,10 +60,9 @@ function writeRaw(storage: StorageLike | null, key: string, value: string): void
   }
   try {
     storage.setItem(key, value);
-    memoryStorage.set(key, value);
   } catch (error) {
-    // Do not keep the rejected value: a caller that rolls back would otherwise
-    // find it again through the fallback on the next read.
+    // Keep nothing: the fallback is for callers with no storage at all, and a
+    // rejected value left there would come back after a rollback.
     throw new RepositoryError(
       "브라우저 저장 공간에 기록하지 못했습니다. 저장 공간을 확인해주세요.",
       { code: "storage/write-failed", operation: "write", cause: error },
@@ -266,12 +265,6 @@ function parseStored<T extends BaseEntity>(raw: string | null): T[] {
   });
 }
 
-/** Where each stored row sits, so a batch does not rescan the array per item. */
-interface ItemIndex {
-  byId: Map<string, number>;
-  byFingerprint: Map<string, number>;
-}
-
 function cloneStored<T extends BaseEntity>(item: T): T {
   try {
     return structuredClone(item);
@@ -364,28 +357,25 @@ export class LocalStorageRepository<T extends BaseEntity>
   }
 
   /**
-   * Places one item; the caller decides when to persist and notify. The index
-   * is optional: a batch builds it once instead of scanning per item, which is
-   * quadratic on a large import.
+   * Places one item; the caller decides when to persist and notify. The scan
+   * stays here rather than in a prebuilt index: the store can hold two rows
+   * with one fingerprint, and an index keyed by fingerprint cannot say which
+   * of them a write belongs to.
    */
-  private apply(item: T, index?: ItemIndex): { item: T; at: number } {
+  private apply(item: T, operation: string): { item: T; at: number } {
     const id = item.id?.trim();
     if (!id) {
       throw new RepositoryError("기록 식별자가 없습니다.", {
         code: "validation/missing-id",
-        operation: index ? "upsert-many" : "upsert",
+        operation,
       });
     }
     const current = cloneStored(this.normalize({ ...item, id }));
-    const existingIndex = index
-      ? index.byId.get(id) ?? -1
-      : this.items.findIndex((candidate) => candidate.id === id);
+    const existingIndex = this.items.findIndex((candidate) => candidate.id === id);
     const fingerprintIndex =
       existingIndex >= 0 || !current.fingerprint
         ? -1
-        : index
-          ? index.byFingerprint.get(current.fingerprint) ?? -1
-          : this.items.findIndex((candidate) => candidate.fingerprint === current.fingerprint);
+        : this.items.findIndex((candidate) => candidate.fingerprint === current.fingerprint);
     const stored = this.items[existingIndex >= 0 ? existingIndex : fingerprintIndex];
     const updated: T = {
       ...current,
@@ -396,18 +386,7 @@ export class LocalStorageRepository<T extends BaseEntity>
     };
     const at =
       existingIndex >= 0 ? existingIndex : fingerprintIndex >= 0 ? fingerprintIndex : this.items.length;
-    const replaced = this.items[at];
     this.items[at] = updated;
-    if (index) {
-      // The row that sat here is gone; leaving its keys behind would point a
-      // later item in the batch at a row that no longer exists.
-      if (replaced && replaced.id !== id) index.byId.delete(replaced.id);
-      if (replaced?.fingerprint && replaced.fingerprint !== updated.fingerprint) {
-        index.byFingerprint.delete(replaced.fingerprint);
-      }
-      index.byId.set(id, at);
-      if (updated.fingerprint) index.byFingerprint.set(updated.fingerprint, at);
-    }
     return { item: updated, at };
   }
 
@@ -420,7 +399,7 @@ export class LocalStorageRepository<T extends BaseEntity>
     this.items = [...previous];
     let updated: T;
     try {
-      updated = this.apply(item).item;
+      updated = this.apply(item, "upsert").item;
       this.persist();
     } catch (error) {
       this.items = previous;
@@ -453,13 +432,8 @@ export class LocalStorageRepository<T extends BaseEntity>
     this.items = [...previous];
     const written = new Map<number, T>();
     try {
-      const index: ItemIndex = { byId: new Map(), byFingerprint: new Map() };
-      this.items.forEach((item, at) => {
-        index.byId.set(item.id, at);
-        if (item.fingerprint) index.byFingerprint.set(item.fingerprint, at);
-      });
       for (const item of items) {
-        const { item: updated, at } = this.apply(item, index);
+        const { item: updated, at } = this.apply(item, "upsert-many");
         written.set(at, updated);
       }
       this.persist();
@@ -479,8 +453,14 @@ export class LocalStorageRepository<T extends BaseEntity>
   async remove(id: string): Promise<void> {
     const next = this.items.filter((item) => item.id !== id);
     if (next.length === this.items.length) return;
+    const previous = this.items;
     this.items = next;
-    this.persist();
+    try {
+      this.persist();
+    } catch (error) {
+      this.items = previous;
+      throw error;
+    }
     this.emit();
   }
 

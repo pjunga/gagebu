@@ -288,14 +288,14 @@ export class FirebaseRepository<T extends BaseEntity>
       return written;
     } catch (error) {
       if (error instanceof RepositoryError) throw error;
-      // Earlier chunks are already in Firestore; saying nothing would leave the
-      // user believing an import that half landed did not run at all.
-      throw new RepositoryError(
-        committed
-          ? `Firebase에 기록을 저장하지 못했습니다. ${committed}건은 이미 저장되었습니다.`
-          : "Firebase에 기록을 저장하지 못했습니다.",
-        { code: "firebase/write-failed", operation: "upsert-many", cause: error },
-      );
+      // Earlier chunks are already in Firestore; the caller adds them to its own
+      // tally so the user is told once how much of the import landed.
+      throw new RepositoryError("Firebase에 기록을 저장하지 못했습니다.", {
+        code: "firebase/write-failed",
+        operation: "upsert-many",
+        cause: error,
+        alreadySaved: committed,
+      });
     }
   }
 
@@ -308,11 +308,16 @@ export class FirebaseRepository<T extends BaseEntity>
     target: Awaited<ReturnType<FirebaseRepository<T>["collectionForUser"]>>,
     items: T[],
   ): Promise<Map<string, unknown>> {
-    const ids = items.map((item) => item.id.trim());
-    const stored = new Map<string, unknown>();
+    const ids = items.filter((item) => !item.createdAt).map((item) => item.id.trim());
+    const chunks: string[][] = [];
     for (let offset = 0; offset < ids.length; offset += DOCUMENT_ID_QUERY_LIMIT) {
-      const chunk = ids.slice(offset, offset + DOCUMENT_ID_QUERY_LIMIT);
-      const snapshot = await getDocs(query(target, where(documentId(), "in", chunk)));
+      chunks.push(ids.slice(offset, offset + DOCUMENT_ID_QUERY_LIMIT));
+    }
+    const snapshots = await Promise.all(
+      chunks.map((chunk) => getDocs(query(target, where(documentId(), "in", chunk)))),
+    );
+    const stored = new Map<string, unknown>();
+    for (const snapshot of snapshots) {
       for (const entry of snapshot.docs) stored.set(entry.id, entry.data().createdAt);
     }
     return stored;

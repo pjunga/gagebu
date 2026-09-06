@@ -6,7 +6,7 @@ import type {
   WorkItem,
 } from "./domain";
 import { type IncomeDetails, type SavingsAssetType } from "./domain";
-import type { DomainRepositories } from "./repository-types";
+import { RepositoryError, type DomainRepositories } from "./repository-types";
 
 export type WorkbookCell = string | number | boolean | Date | null | undefined;
 export type WorkbookRows = WorkbookCell[][];
@@ -1234,12 +1234,17 @@ async function saveRecords(
       // Count what the repository stored, not what was handed to it.
       saved[key] += (await save(pending)).length;
     } catch (error) {
-      // Groups are written one after another, so an earlier group may already
-      // be stored. Say so rather than letting it read as a total failure.
-      const written = savedSoFar();
+      // Groups are written one after another, and a failing batch may itself
+      // have committed part of its chunks. Report the total once.
+      const written = savedSoFar() + (error instanceof RepositoryError ? error.alreadySaved ?? 0 : 0);
       if (!written) throw error;
       const reason = error instanceof Error ? error.message : "기록을 저장하지 못했습니다.";
-      throw Object.assign(new Error(`${reason} ${written}건은 이미 저장되었습니다.`), { cause: error });
+      throw new RepositoryError(`${reason} ${written}건은 이미 저장되었습니다.`, {
+        code: IMPORT_ERROR_CODE,
+        operation: "import",
+        cause: error,
+        alreadySaved: written,
+      });
     }
   }
   return { ...saved, skippedExisting };
