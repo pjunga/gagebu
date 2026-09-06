@@ -711,7 +711,7 @@ function EntryModal({
                     type="number"
                     inputMode="numeric"
                     min="0"
-                    step="1000"
+                    step="1"
                     value={draft.kind === "salary" ? draft.netAmount : draft.amount}
                     onChange={(event) => update(draft.kind === "salary" ? "netAmount" : "amount", event.target.value)}
                     className={`${fieldClass} pr-12 text-right tabular-nums`}
@@ -814,11 +814,11 @@ function EntryModal({
                 </div>
                 <div>
                   <FieldLabel htmlFor="savings-monthly">월 납입액</FieldLabel>
-                  <div className="relative"><input id="savings-monthly" type="number" min="0" step="1000" value={draft.monthlyContribution} onChange={(event) => update("monthlyContribution", event.target.value)} className={`${fieldClass} pr-12 text-right tabular-nums`} placeholder="0" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">원</span></div>
+                  <div className="relative"><input id="savings-monthly" type="number" min="0" step="1" value={draft.monthlyContribution} onChange={(event) => update("monthlyContribution", event.target.value)} className={`${fieldClass} pr-12 text-right tabular-nums`} placeholder="0" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">원</span></div>
                 </div>
                 <div>
                   <FieldLabel htmlFor="savings-balance">현재 잔액</FieldLabel>
-                  <div className="relative"><input id="savings-balance" type="number" min="0" step="1000" value={draft.balance} onChange={(event) => update("balance", event.target.value)} className={`${fieldClass} pr-12 text-right tabular-nums`} placeholder="예치 금액과 같으면 비워두세요" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">원</span></div>
+                  <div className="relative"><input id="savings-balance" type="number" min="0" step="1" value={draft.balance} onChange={(event) => update("balance", event.target.value)} className={`${fieldClass} pr-12 text-right tabular-nums`} placeholder="예치 금액과 같으면 비워두세요" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">원</span></div>
                 </div>
                 <SelectField id="savings-status" label="상태" value={assetStatusLabels[savingsStatusOptions.includes(draft.status) ? draft.status : "active"]} onChange={(value) => update("status", savingsStatusOptions.find((status) => assetStatusLabels[status] === value) || "active")} options={savingsStatusOptions.map((status) => assetStatusLabels[status])} />
               </>
@@ -841,13 +841,13 @@ function EntryModal({
                 <div>
                   <FieldLabel htmlFor="stock-unit-price" required>주문 단가</FieldLabel>
                   <div className="relative">
-                    <input id="stock-unit-price" type="number" min="0" step="100" value={draft.unitPrice} onChange={(event) => update("unitPrice", event.target.value)} className={`${fieldClass} pr-12 text-right tabular-nums`} placeholder="0" />
+                    <input id="stock-unit-price" type="number" min="0" step="any" value={draft.unitPrice} onChange={(event) => update("unitPrice", event.target.value)} className={`${fieldClass} pr-12 text-right tabular-nums`} placeholder="0" />
                     <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">원</span>
                   </div>
                 </div>
                 <div>
                   <FieldLabel htmlFor="stock-principal">주문 후 원금·잔액</FieldLabel>
-                  <div className="relative"><input id="stock-principal" type="number" min="0" step="1000" value={draft.principalOrBalance} onChange={(event) => update("principalOrBalance", event.target.value)} className={`${fieldClass} pr-12 text-right tabular-nums`} placeholder="선택 입력" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">원</span></div>
+                  <div className="relative"><input id="stock-principal" type="number" min="0" step="1" value={draft.principalOrBalance} onChange={(event) => update("principalOrBalance", event.target.value)} className={`${fieldClass} pr-12 text-right tabular-nums`} placeholder="선택 입력" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">원</span></div>
                 </div>
                 <fieldset className="sm:col-span-2">
                   <legend className="text-xs font-medium text-body">주문 구분</legend>
