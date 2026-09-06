@@ -4,10 +4,12 @@ import {
   importedId,
   parseAmount,
   parseDateValue,
+  partialSaveError,
   previewImportRows,
   stableFingerprint,
   type WorkbookRows,
 } from "./xlsx-import";
+import { RepositoryError } from "./repository-types";
 
 test("parseAmount reads the money formats the source workbook uses", () => {
   assert.equal(parseAmount("1,234원"), 1234);
@@ -105,4 +107,26 @@ test("previewImportRows reports sheets it does not understand", () => {
   assert.equal(preview.counts.transactions, 0);
   assert.equal(preview.skippedRows.length, 1);
   assert.equal(preview.skippedRows[0].sheet, "메모");
+});
+
+test("partialSaveError reports everything stored before the failure", () => {
+  const groupFailure = new RepositoryError("Firebase에 기록을 저장하지 못했습니다.", {
+    code: "firebase/write-failed",
+    alreadySaved: 400,
+  });
+
+  const composed = partialSaveError(groupFailure, 1200);
+  assert.ok(composed instanceof RepositoryError);
+  assert.equal(composed.alreadySaved, 1600);
+  assert.equal(composed.code, "firebase/write-failed");
+  assert.match(composed.message, /1600건은 이미 저장되었습니다\.$/);
+  // The count is stated once, not once per layer.
+  assert.equal(composed.message.match(/이미 저장되었습니다/g)?.length, 1);
+});
+
+test("partialSaveError passes a failure through when nothing was stored", () => {
+  const failure = new RepositoryError("브라우저 저장 공간에 기록하지 못했습니다.", {
+    code: "storage/write-failed",
+  });
+  assert.equal(partialSaveError(failure, 0), failure);
 });

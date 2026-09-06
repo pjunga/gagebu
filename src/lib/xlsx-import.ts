@@ -1194,6 +1194,24 @@ export async function previewXlsxImport(
 
 export const previewImport = previewXlsxImport;
 
+/**
+ * Groups are written one after another, and a failing batch may itself have
+ * committed part of its chunks, so a failure has to say how much of the import
+ * survived. The cause's own code is kept: telling a rejected row from a dropped
+ * connection is what decides whether retrying helps.
+ */
+export function partialSaveError(error: unknown, savedBeforeFailure: number): Error {
+  const alreadySaved = savedBeforeFailure + (error instanceof RepositoryError ? error.alreadySaved ?? 0 : 0);
+  if (!alreadySaved) return error instanceof Error ? error : new Error(String(error));
+  const reason = error instanceof Error ? error.message : "기록을 저장하지 못했습니다.";
+  return new RepositoryError(`${reason} ${alreadySaved}건은 이미 저장되었습니다.`, {
+    code: error instanceof RepositoryError ? error.code : "xlsx/save-failed",
+    operation: "import",
+    cause: error,
+    alreadySaved,
+  });
+}
+
 async function saveRecords(
   preview: XlsxImportPreview,
   repositories: DomainRepositories,
@@ -1234,17 +1252,7 @@ async function saveRecords(
       // Count what the repository stored, not what was handed to it.
       saved[key] += (await save(pending)).length;
     } catch (error) {
-      // Groups are written one after another, and a failing batch may itself
-      // have committed part of its chunks. Report the total once.
-      const written = savedSoFar() + (error instanceof RepositoryError ? error.alreadySaved ?? 0 : 0);
-      if (!written) throw error;
-      const reason = error instanceof Error ? error.message : "기록을 저장하지 못했습니다.";
-      throw new RepositoryError(`${reason} ${written}건은 이미 저장되었습니다.`, {
-        code: IMPORT_ERROR_CODE,
-        operation: "import",
-        cause: error,
-        alreadySaved: written,
-      });
+      throw partialSaveError(error, savedSoFar());
     }
   }
   return { ...saved, skippedExisting };
