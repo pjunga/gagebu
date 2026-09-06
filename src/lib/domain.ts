@@ -76,6 +76,11 @@ export interface SavingsAccount extends BaseEntity {
   interestAmount?: number;
   startDate?: string;
   maturityDate?: string;
+  /**
+   * Set only when the user ends the account. Every other status ("만기 임박",
+   * "만기 도래") is derived from the maturity date, so storing it would go stale.
+   */
+  closedAt?: string;
   memo?: string;
 }
 
