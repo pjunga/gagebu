@@ -13,6 +13,14 @@ import {
   type WorkItem as DomainWorkItem,
   type WorkItemStatus,
 } from "@/lib/domain";
+import {
+  categorySubLabel,
+  formatMoney,
+  isAssetInYear,
+  previousMonthOf,
+  relativeDay,
+  totalByCurrency,
+} from "@/lib/finance-display";
 import { createDataRepositories } from "@/lib/repositories";
 import {
   importXlsxFile,
@@ -55,6 +63,7 @@ export type FinanceRecord = {
   count?: number;
   workItemId?: string;
   side?: "buy" | "sell";
+  currency?: string;
   ticker?: string;
   quantity?: number;
   unitPrice?: number;
@@ -144,12 +153,7 @@ const assetStatusLabels: Record<AssetStatus, string> = {
   closed: "종료",
 };
 
-const currency = (value: number) =>
-  new Intl.NumberFormat("ko-KR", {
-    style: "currency",
-    currency: "KRW",
-    maximumFractionDigits: 0,
-  }).format(value);
+const currency = (value: number, currencyCode?: string) => formatMoney(value, currencyCode);
 
 const compactCurrency = (value: number) => {
   const absolute = Math.abs(value);
@@ -296,6 +300,14 @@ function StatusBadge({ status }: { status?: AssetStatus | WorkStatus }) {
   );
 }
 
+function SideBadge({ side }: { side: "buy" | "sell" }) {
+  return (
+    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium ring-1 ring-inset ${toneClasses("violet", true)}`}>
+      {side === "buy" ? "매수" : "매도"}
+    </span>
+  );
+}
+
 function KindBadge({ kind }: { kind: EntryKind }) {
   const tone = entryTones[kind];
   return (
@@ -433,14 +445,14 @@ function StatCard({
 }) {
   const content = (
     <>
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-start justify-between gap-2">
         <p className="text-xs font-medium text-muted">{label}</p>
-        <span className={`flex h-8 w-8 items-center justify-center rounded-2xl ${toneClasses(tone, true)}`}>
-          <Icon name={icon} size={16} />
+        <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-2xl sm:h-8 sm:w-8 ${toneClasses(tone, true)}`}>
+          <Icon name={icon} size={15} />
         </span>
       </div>
-      <p className="mt-4 text-2xl font-semibold tracking-tight text-ink">{value}</p>
-      <p className="mt-2 text-[11px] text-faint">{subtext}</p>
+      <p className="mt-3 text-xl font-semibold tracking-tight text-ink sm:mt-4 sm:text-2xl">{value}</p>
+      <p className="mt-2 text-[11px] leading-4 text-faint">{subtext}</p>
     </>
   );
   if (onClick) {
@@ -448,14 +460,14 @@ function StatCard({
       <button
         type="button"
         onClick={onClick}
-        className="group rounded-3xl border border-line bg-card p-5 text-left shadow-[0_12px_40px_rgba(0,0,0,0.12)] transition hover:-translate-y-0.5 hover:border-line-strong hover:bg-card-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+        className="group rounded-3xl border border-line bg-card p-4 text-left shadow-[0_12px_40px_rgba(0,0,0,0.12)] transition hover:-translate-y-0.5 hover:border-line-strong hover:bg-card-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
       >
         {content}
       </button>
     );
   }
   return (
-    <div className="rounded-3xl border border-line bg-card p-5 shadow-[0_12px_40px_rgba(0,0,0,0.12)]">
+    <div className="rounded-3xl border border-line bg-card p-4 shadow-[0_12px_40px_rgba(0,0,0,0.12)]">
       {content}
     </div>
   );
@@ -905,9 +917,11 @@ function DetailModal({
     record.maturityDate ? ["만기일", dateText(record.maturityDate)] : null,
     record.ticker ? ["종목 코드", record.ticker] : null,
     record.quantity ? ["수량", `${record.quantity.toLocaleString("ko-KR")}주`] : null,
-    record.unitPrice ? ["주문 단가", currency(record.unitPrice)] : null,
+    record.unitPrice ? ["주문 단가", currency(record.unitPrice, record.currency)] : null,
     record.side ? ["주문 구분", record.side === "buy" ? "매수" : "매도"] : null,
-    record.status ? ["상태", record.status] : null,
+    record.status && assetStatusLabels[record.status as AssetStatus]
+      ? ["상태", assetStatusLabels[record.status as AssetStatus]]
+      : null,
   ].filter(Boolean) as string[][];
 
   return (
@@ -918,7 +932,7 @@ function DetailModal({
             <KindBadge kind={record.kind} />
             <h2 id="detail-dialog-title" className="mt-3 truncate text-xl font-semibold text-ink">{record.title}</h2>
             <p className={`mt-2 text-2xl font-semibold tabular-nums ${record.kind === "expense" ? "text-rose-200" : "text-emerald-200"}`}>
-              {record.kind === "expense" ? "−" : record.kind === "stock-order" && record.side === "sell" ? "+" : "+"}{currency(record.amount)}
+              {record.kind === "expense" ? "−" : record.kind === "stock-order" && record.side === "sell" ? "+" : "+"}{currency(record.amount, record.currency)}
             </p>
           </div>
           <button type="button" onClick={onClose} aria-label="상세 닫기" className="rounded-2xl p-2 text-muted transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"><Icon name="close" size={20} /></button>
@@ -1116,14 +1130,7 @@ const navItems: { key: ViewKey; label: string; icon: IconName; description: stri
 ];
 
 function formatRelativeDue(dateValue: string) {
-  const today = new Date(`${currentDate()}T00:00:00`).getTime();
-  const due = new Date(`${dateValue}T00:00:00`).getTime();
-  const diff = Math.round((due - today) / 86_400_000);
-  if (diff === 0) return "오늘";
-  if (diff === 1) return "내일";
-  if (diff > 1 && diff < 14) return `${diff}일 후`;
-  if (diff < 0) return `${Math.abs(diff)}일 지남`;
-  return dateText(dateValue);
+  return relativeDay(dateValue, currentDate());
 }
 
 function MiniBar({ value, max, tone = "emerald" }: { value: number; max: number; tone?: string }) {
@@ -1154,9 +1161,17 @@ function OverviewPanel({
   onOpenImport: () => void;
   onOpenDetail: (record: FinanceRecord) => void;
 }) {
+  const sumIncome = (items: FinanceRecord[]) =>
+    items.filter((record) => ["salary", "side-income"].includes(record.kind)).reduce((sum, record) => sum + record.amount, 0);
+  const sumExpense = (items: FinanceRecord[]) =>
+    items.filter((record) => record.kind === "expense").reduce((sum, record) => sum + record.amount, 0);
   const monthRecords = records.filter((record) => record.date.startsWith(month));
-  const income = monthRecords.filter((record) => ["salary", "side-income"].includes(record.kind)).reduce((sum, record) => sum + record.amount, 0);
-  const expense = monthRecords.filter((record) => record.kind === "expense").reduce((sum, record) => sum + record.amount, 0);
+  const income = sumIncome(monthRecords);
+  const expense = sumExpense(monthRecords);
+  const previousMonth = previousMonthOf(month);
+  const previousRecords = records.filter((record) => record.date.startsWith(previousMonth));
+  const previousNet = sumIncome(previousRecords) - sumExpense(previousRecords);
+  const netChange = income - expense - previousNet;
   const assets = records.filter((record) => ["savings", "stock-order"].includes(record.kind));
   const netAssets = assets.reduce((sum, record) => sum + record.amount, 0);
   const categoryTotals = monthRecords.filter((record) => record.kind === "expense").reduce<Record<string, number>>((result, record) => {
@@ -1171,11 +1186,11 @@ function OverviewPanel({
 
   return (
     <div className="space-y-6">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         {loading ? <><LoadingCard /><LoadingCard /><LoadingCard /><LoadingCard /></> : <>
           <StatCard label={`${monthText(month)} 수입`} value={compactCurrency(income)} subtext={`${currency(income)} · 전월 대비 확인`} tone="emerald" icon="arrow-up" onClick={() => onNavigate("transactions")} />
           <StatCard label={`${monthText(month)} 지출`} value={compactCurrency(expense)} subtext={`${currency(expense)} · 카테고리별 보기`} tone="rose" icon="arrow-down" onClick={() => onNavigate("transactions")} />
-          <StatCard label="이번 달 잔액" value={compactCurrency(income - expense)} subtext={income >= expense ? "수입이 지출보다 많아요" : "지출을 점검해보세요"} tone={income >= expense ? "sky" : "rose"} icon="wallet" />
+          <StatCard label="전월 대비" value={`${netChange >= 0 ? "+" : "−"}${currency(Math.abs(netChange))}`} subtext={`${monthText(previousMonth)} 순현금 ${currency(previousNet)}`} tone={netChange >= 0 ? "sky" : "rose"} icon="wallet" />
           <StatCard label="순자산 기록" value={compactCurrency(netAssets)} subtext={`${assets.length}개 자산 기록`} tone="violet" icon="pie-chart" onClick={() => onNavigate("assets")} />
         </>}
       </div>
@@ -1194,7 +1209,7 @@ function OverviewPanel({
                 <div><div className="mb-2 flex items-center justify-between text-xs"><span className="flex items-center gap-2 text-muted"><i className="h-2 w-2 rounded-full bg-rose-300" />지출</span><span className="font-medium tabular-nums text-body">{currency(expense)}</span></div><div className="h-2 overflow-hidden rounded-full bg-card-strong"><div className="h-full rounded-full bg-rose-400" style={{ width: `${expense ? Math.min(100, (expense / Math.max(income, expense)) * 100) : 0}%` }} /></div></div>
               </div>
             </div>
-            <div className="rounded-3xl border border-line bg-card-soft p-4"><div className="flex items-center justify-between"><p className="text-xs font-medium text-body">지출 카테고리</p><Icon name="pie-chart" size={16} className="text-faint" /></div>{categories.length ? <div className="mt-4 space-y-3">{categories.map(([category, value], index) => <div key={category}><div className="mb-1.5 flex justify-between text-[11px]"><span className="text-muted">{category}</span><span className="tabular-nums text-body">{currency(value)}</span></div><MiniBar value={value} max={maxCategory} tone={["rose", "amber", "sky", "violet"][index] || "rose"} /></div>)}</div> : <p className="mt-5 text-xs leading-5 text-faint">아직 지출 기록이 없습니다.<br />첫 기록을 추가해보세요.</p>}</div>
+            <div className="rounded-3xl border border-line bg-card-soft p-4"><div className="flex items-center justify-between gap-2"><div><p className="text-xs font-medium text-body">지출 카테고리</p><p className="mt-0.5 text-[11px] tabular-nums text-faint">합계 {currency(expense)}</p></div><Icon name="pie-chart" size={16} className="text-faint" /></div>{categories.length ? <div className="mt-4 space-y-3">{categories.map(([category, value], index) => <div key={category}><div className="mb-1.5 flex items-baseline justify-between gap-2 text-[11px]"><span className="min-w-0 truncate text-muted">{category}<span className="ml-1.5 tabular-nums text-faint">{expense ? Math.round((value / expense) * 100) : 0}%</span></span><span className="shrink-0 tabular-nums text-body">{currency(value)}</span></div><MiniBar value={value} max={maxCategory} tone={["rose", "amber", "sky", "violet"][index] || "rose"} /></div>)}</div> : <p className="mt-5 text-xs leading-5 text-faint">아직 지출 기록이 없습니다.<br />첫 기록을 추가해보세요.</p>}</div>
           </div>
         </section>
 
@@ -1214,7 +1229,7 @@ function OverviewPanel({
         </section>
         <section className="rounded-3xl border border-line bg-card p-5 sm:p-6">
           <SectionHeading eyebrow="To do" title="진행 중인 작업" action={<button type="button" onClick={() => onNavigate("tasks")} className="inline-flex items-center gap-1 text-xs font-medium text-muted transition hover:text-emerald-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">작업 관리 <Icon name="chevron-right" size={14} /></button>} />
-          <div className="mt-4 space-y-2">{ongoing.length ? ongoing.map((task) => <button type="button" key={task.id} onClick={() => onNavigate("tasks")} className="flex w-full items-center gap-3 rounded-3xl border border-line bg-card-soft px-3.5 py-3 text-left transition hover:border-emerald-300/30 hover:bg-emerald-500/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"><span className={`flex h-9 w-9 items-center justify-center rounded-2xl ${task.status === "in-progress" ? "bg-sky-500/10 text-sky-200" : "bg-amber-500/10 text-amber-200"}`}><Icon name={task.status === "in-progress" ? "refresh" : "calendar"} size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-body">{task.title}</span><span className="mt-0.5 block truncate text-[11px] text-faint">{task.description}</span></span><StatusBadge status={task.status} /></button>) : <EmptyState icon="check" title="진행 중인 작업이 없습니다" description="새로운 작업을 추가하면 이곳에서 관리할 수 있어요." />}</div>
+          <div className="mt-4 space-y-2">{ongoing.length ? ongoing.map((task) => <button type="button" key={task.id} onClick={() => onNavigate("tasks")} className="flex w-full items-center gap-3 rounded-3xl border border-line bg-card-soft px-3.5 py-3 text-left transition hover:border-emerald-300/30 hover:bg-emerald-500/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"><span className={`flex h-9 w-9 items-center justify-center rounded-2xl ${task.status === "in-progress" ? "bg-sky-500/10 text-sky-200" : "bg-amber-500/10 text-amber-200"}`}><Icon name={task.status === "in-progress" ? "refresh" : "calendar"} size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-body">{task.title}</span><span className="mt-0.5 block truncate text-[11px] text-faint">{[task.dueDate ? `마감 ${dateText(task.dueDate)}` : task.workDate ? dateText(task.workDate) : "", task.amount ? currency(task.amount) : "", task.description ?? ""].filter(Boolean).join(" · ") || "세부 정보 없음"}</span></span><StatusBadge status={task.status} /></button>) : <EmptyState icon="check" title="진행 중인 작업이 없습니다" description="새로운 작업을 추가하면 이곳에서 관리할 수 있어요." />}</div>
         </section>
       </div>
     </div>
@@ -1258,13 +1273,13 @@ function TransactionsPanel({
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-3xl border border-emerald-400/15 bg-emerald-500/[0.05] p-4"><p className="text-xs text-emerald-200/70">조회 기간 수입</p><p className="mt-2 text-xl font-semibold tabular-nums text-emerald-100">{currency(income)}</p></div>
-        <div className="rounded-3xl border border-rose-400/15 bg-rose-500/[0.05] p-4"><p className="text-xs text-rose-200/70">조회 기간 지출</p><p className="mt-2 text-xl font-semibold tabular-nums text-rose-100">{currency(expense)}</p></div>
-        <div className="rounded-3xl border border-line bg-card p-4"><p className="text-xs text-faint">순현금 흐름</p><p className={`mt-2 text-xl font-semibold tabular-nums ${income >= expense ? "text-sky-100" : "text-rose-100"}`}>{income >= expense ? "+" : "−"}{currency(Math.abs(income - expense))}</p></div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="rounded-3xl border border-emerald-400/15 bg-emerald-500/[0.05] px-4 py-3"><p className="text-xs text-emerald-200/70">조회 기간 수입</p><p className="mt-1.5 text-lg font-semibold tabular-nums text-emerald-100">{currency(income)}</p></div>
+        <div className="rounded-3xl border border-rose-400/15 bg-rose-500/[0.05] px-4 py-3"><p className="text-xs text-rose-200/70">조회 기간 지출</p><p className="mt-1.5 text-lg font-semibold tabular-nums text-rose-100">{currency(expense)}</p></div>
+        <div className="rounded-3xl border border-line bg-card px-4 py-3"><p className="text-xs text-faint">순현금 흐름</p><p className={`mt-1.5 text-lg font-semibold tabular-nums ${income >= expense ? "text-sky-100" : "text-rose-100"}`}>{income >= expense ? "+" : "−"}{currency(Math.abs(income - expense))}</p></div>
       </div>
       <section className="rounded-3xl border border-line bg-card">
-        <div className="flex flex-col gap-4 border-b border-line p-4 sm:p-5">
+        <div className="flex flex-col gap-3 border-b border-line p-4 sm:px-5 sm:py-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-1 rounded-2xl bg-card-strong p-1" role="group" aria-label="조회 범위">
               <button type="button" onClick={() => setRange("month")} aria-pressed={range === "month"} className={`rounded-xl px-3 py-2 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 ${range === "month" ? "bg-emerald-400/20 text-ink shadow-sm text-ink" : "text-faint hover:text-ink"}`}>월별</button>
@@ -1282,9 +1297,9 @@ function TransactionsPanel({
           </div>
         </div>
         <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[680px] text-left text-sm"><caption className="sr-only">수입·지출 내역</caption><thead className="border-b border-line text-[11px] text-faint"><tr><th scope="col" className="px-5 py-3 font-medium">날짜</th><th scope="col" className="px-3 py-3 font-medium">유형</th><th scope="col" className="px-3 py-3 font-medium">내역</th><th scope="col" className="px-3 py-3 font-medium">출처·수단</th><th scope="col" className="px-3 py-3 text-right font-medium">금액</th><th scope="col" className="px-5 py-3 text-right font-medium">상세</th></tr></thead><tbody className="divide-y divide-line">{visible.map((record) => <tr key={record.id} className="group transition hover:bg-card-soft"><td className="whitespace-nowrap px-5 py-4 text-xs tabular-nums text-faint">{dateText(record.date)}</td><td className="px-3 py-4"><KindBadge kind={record.kind} /></td><td className="px-3 py-4"><p className="font-medium text-body">{record.title}</p>{record.category && <p className="mt-1 text-xs text-faint">{record.category}</p>}</td><td className="px-3 py-4 text-xs text-muted">{record.source || record.account || "—"}</td><td className={`whitespace-nowrap px-3 py-4 text-right font-semibold tabular-nums ${record.kind === "expense" ? "text-rose-200" : "text-emerald-200"}`}>{record.kind === "expense" ? "−" : "+"}{currency(record.amount)}</td><td className="px-5 py-4 text-right"><button type="button" onClick={() => onOpenDetail(record)} className="rounded-xl p-2 text-faint opacity-70 transition hover:bg-card-strong hover:text-ink focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300" aria-label={`${record.title} 상세 보기`}><Icon name="more" size={17} /></button></td></tr>)}</tbody></table>
+          <table className="w-full min-w-[680px] text-left text-sm"><caption className="sr-only">수입·지출 내역</caption><thead className="border-b border-line text-[11px] text-faint"><tr><th scope="col" className="px-5 py-3 font-medium">날짜</th><th scope="col" className="px-3 py-3 font-medium">유형</th><th scope="col" className="px-3 py-3 font-medium">내역</th><th scope="col" className="px-3 py-3 font-medium">출처·수단</th><th scope="col" className="px-3 py-3 text-right font-medium">금액</th><th scope="col" className="px-5 py-3 text-right font-medium">상세</th></tr></thead><tbody className="divide-y divide-line">{visible.map((record) => <tr key={record.id} className="group transition hover:bg-card-soft"><td className="whitespace-nowrap px-5 py-2.5 text-xs tabular-nums text-faint">{dateText(record.date)}</td><td className="px-3 py-2.5"><KindBadge kind={record.kind} /></td><td className="px-3 py-2.5"><p className="font-medium text-body">{record.title}</p>{categorySubLabel(entryLabels[record.kind], record.category) && <p className="mt-0.5 text-xs text-faint">{categorySubLabel(entryLabels[record.kind], record.category)}</p>}</td><td className="px-3 py-2.5 text-xs text-muted">{record.source || record.account || "—"}</td><td className={`whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums ${record.kind === "expense" ? "text-rose-200" : "text-emerald-200"}`}>{record.kind === "expense" ? "−" : "+"}{currency(record.amount)}</td><td className="px-5 py-2.5 text-right"><button type="button" onClick={() => onOpenDetail(record)} className="rounded-xl p-2 text-faint opacity-70 transition hover:bg-card-strong hover:text-ink focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300" aria-label={`${record.title} 상세 보기`}><Icon name="more" size={17} /></button></td></tr>)}</tbody></table>
         </div>
-        <div className="divide-y divide-line md:hidden">{visible.map((record) => <button type="button" key={record.id} onClick={() => onOpenDetail(record)} className="flex w-full items-start gap-3 px-4 py-4 text-left transition hover:bg-card focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-300"><span className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-2xl ${toneClasses(entryTones[record.kind], true)}`}><Icon name={entryIcons[record.kind]} size={16} /></span><span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-3"><span className="truncate text-sm font-medium text-body">{record.title}</span><span className={`shrink-0 text-sm font-semibold tabular-nums ${record.kind === "expense" ? "text-rose-200" : "text-emerald-200"}`}>{record.kind === "expense" ? "−" : "+"}{currency(record.amount)}</span></span><span className="mt-1 block text-[11px] text-faint">{dateText(record.date)} · {entryLabels[record.kind]}{record.category ? ` · ${record.category}` : ""}</span></span></button>)}</div>
+        <div className="divide-y divide-line md:hidden">{visible.map((record) => <button type="button" key={record.id} onClick={() => onOpenDetail(record)} className="flex w-full items-start gap-3 px-4 py-4 text-left transition hover:bg-card focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-300"><span className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-2xl ${toneClasses(entryTones[record.kind], true)}`}><Icon name={entryIcons[record.kind]} size={16} /></span><span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-3"><span className="truncate text-sm font-medium text-body">{record.title}</span><span className={`shrink-0 text-sm font-semibold tabular-nums ${record.kind === "expense" ? "text-rose-200" : "text-emerald-200"}`}>{record.kind === "expense" ? "−" : "+"}{currency(record.amount)}</span></span><span className="mt-1 block text-[11px] text-faint">{dateText(record.date)} · {entryLabels[record.kind]}{categorySubLabel(entryLabels[record.kind], record.category) ? ` · ${categorySubLabel(entryLabels[record.kind], record.category)}` : ""}</span></span></button>)}</div>
         {!visible.length && <div className="p-4 sm:p-5"><EmptyState icon="search" title="조건에 맞는 내역이 없습니다" description="조회 기간이나 필터를 바꾸거나, 새 내역을 추가해보세요." action={<button type="button" onClick={() => onAdd("expense")} className="rounded-2xl bg-emerald-400 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200">내역 추가</button>} /></div>}
         <div className="border-t border-line px-4 py-3 text-[11px] text-faint sm:px-5">총 {visible.length}건 · 금액은 원화 기준으로 표시됩니다.</div>
       </section>
@@ -1309,21 +1324,25 @@ function AssetsPanel({
   const [status, setStatus] = useState("전체 상태");
   const assets = records.filter((record) => record.kind === "savings" || record.kind === "stock-order");
   const visible = assets.filter((record) => {
-    if (record.date.slice(0, 4) !== year) return false;
+    if (!isAssetInYear({ ...record, recurring: record.kind === "savings" }, year)) return false;
     if (institution !== "전체 기관" && record.institution !== institution) return false;
     if (status !== "전체 상태" && record.status !== status) return false;
     return true;
   });
-  const savings = visible.filter((record) => record.kind === "savings").reduce((sum, record) => sum + record.amount, 0);
-  const stocks = visible.filter((record) => record.kind === "stock-order").reduce((sum, record) => sum + record.amount, 0);
+  const savings = totalByCurrency(visible.filter((record) => record.kind === "savings")).base;
+  const stockTotals = totalByCurrency(visible.filter((record) => record.kind === "stock-order"));
+  const stocks = stockTotals.base;
+  const foreignNote = stockTotals.foreign.length
+    ? `${stockTotals.foreign.map((entry) => `${entry.code} ${entry.count}건`).join(" · ")} 별도`
+    : "";
   const maturities = assets.filter((record) => record.kind === "savings" && record.maturityDate && record.status !== "closed").sort((left, right) => (left.maturityDate || "").localeCompare(right.maturityDate || ""));
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-3xl border border-sky-400/15 bg-sky-500/[0.05] p-4"><p className="text-xs text-sky-200/70">기록된 자산</p><p className="mt-2 text-xl font-semibold tabular-nums text-sky-100">{currency(savings + stocks)}</p></div><div className="rounded-3xl border border-emerald-400/15 bg-emerald-500/[0.05] p-4"><p className="text-xs text-emerald-200/70">예금·적금</p><p className="mt-2 text-xl font-semibold tabular-nums text-emerald-100">{currency(savings)}</p></div><div className="rounded-3xl border border-violet-400/15 bg-violet-500/[0.05] p-4"><p className="text-xs text-violet-200/70">주식 주문 누적</p><p className="mt-2 text-xl font-semibold tabular-nums text-violet-100">{currency(stocks)}</p></div></div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3"><div className="rounded-3xl border border-sky-400/15 bg-sky-500/[0.05] p-4"><p className="text-xs text-sky-200/70">기록된 자산</p><p className="mt-2 text-xl font-semibold tabular-nums text-sky-100">{currency(savings + stocks)}</p>{foreignNote && <p className="mt-1 text-[11px] text-sky-200/70">{foreignNote}</p>}</div><div className="rounded-3xl border border-emerald-400/15 bg-emerald-500/[0.05] p-4"><p className="text-xs text-emerald-200/70">예금·적금</p><p className="mt-2 text-xl font-semibold tabular-nums text-emerald-100">{currency(savings)}</p></div><div className="rounded-3xl border border-violet-400/15 bg-violet-500/[0.05] p-4"><p className="text-xs text-violet-200/70">주식 주문 누적</p><p className="mt-2 text-xl font-semibold tabular-nums text-violet-100">{currency(stocks)}</p>{foreignNote && <p className="mt-1 text-[11px] text-violet-200/70">{foreignNote}</p>}</div></div>
       <section className="rounded-3xl border border-line bg-card">
         <div className="flex flex-col gap-4 border-b border-line p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-faint">Portfolio</p><h2 className="mt-1 text-lg font-semibold text-ink">자산 목록</h2></div><div className="flex flex-wrap gap-2"><select aria-label="자산 연도" value={year} onChange={(event) => setYear(event.target.value)} className="h-9 rounded-xl border border-line bg-field px-3 text-xs text-body outline-none focus:border-sky-400/60 focus:ring-2 focus:ring-sky-400/15"><option>{year}</option><option>{String(Number(year) - 1)}</option><option>{String(Number(year) + 1)}</option></select><button type="button" onClick={() => onAdd("savings")} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-sky-400 px-3 text-xs font-semibold text-slate-950 transition hover:bg-sky-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"><Icon name="plus" size={14} /> 자산 추가</button></div></div><div className="flex flex-wrap items-center gap-2"><SelectField compact="sm" id="asset-institution" label="기관" value={institution} onChange={setInstitution} options={institutionOptions} /><SelectField compact="sm" id="asset-status" label="상태" value={status === "전체 상태" ? "전체 상태" : assetStatusLabels[status as AssetStatus]} onChange={(value) => setStatus(value === "전체 상태" ? "전체 상태" : (Object.keys(assetStatusLabels) as AssetStatus[]).find((assetStatus) => assetStatusLabels[assetStatus] === value) || "전체 상태")} options={["전체 상태", ...Object.values(assetStatusLabels)]} /></div></div>
-        <div className="divide-y divide-line">{visible.map((record) => <button type="button" key={record.id} onClick={() => onOpenDetail(record)} className="flex w-full items-center gap-3 px-4 py-4 text-left transition hover:bg-card-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 sm:px-5"><span className={`flex h-10 w-10 items-center justify-center rounded-3xl ${toneClasses(entryTones[record.kind], true)}`}><Icon name={entryIcons[record.kind]} size={17} /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-body">{record.title}</span><span className="mt-1 block truncate text-xs text-faint">{record.institution || "기관 미입력"} · {record.account || record.ticker || entryLabels[record.kind]}</span></span><span className="hidden sm:block"><StatusBadge status={record.status || "active"} /></span><span className="text-right"><span className="block text-sm font-semibold tabular-nums text-ink">{currency(record.amount)}</span><span className="mt-1 block text-[11px] text-faint">{record.maturityDate ? `만기 ${dateText(record.maturityDate)}` : dateText(record.date)}</span></span></button>)}{!visible.length && <div className="p-4 sm:p-5"><EmptyState icon="pie-chart" title="조건에 맞는 자산이 없습니다" description="자산 기록을 추가하거나 필터를 조정해보세요." action={<button type="button" onClick={() => onAdd("savings")} className="rounded-2xl bg-sky-400 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200">자산 추가</button>} /></div>}</div>
+        <div className="divide-y divide-line">{visible.map((record) => <button type="button" key={record.id} onClick={() => onOpenDetail(record)} className="flex w-full items-center gap-3 px-4 py-4 text-left transition hover:bg-card-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 sm:px-5"><span className={`flex h-10 w-10 items-center justify-center rounded-3xl ${toneClasses(entryTones[record.kind], true)}`}><Icon name={entryIcons[record.kind]} size={17} /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-body">{record.title}</span><span className="mt-1 block truncate text-xs text-faint">{record.institution || "기관 미입력"} · {record.account || record.ticker || entryLabels[record.kind]}</span></span><span className="hidden sm:block">{record.kind === "stock-order" ? record.side && <SideBadge side={record.side} /> : <StatusBadge status={record.status} />}</span><span className="text-right"><span className="block text-sm font-semibold tabular-nums text-ink">{currency(record.amount, record.currency)}</span><span className="mt-1 block text-[11px] text-faint">{record.maturityDate ? `만기 ${dateText(record.maturityDate)}` : dateText(record.date)}</span></span></button>)}{!visible.length && <div className="p-4 sm:p-5"><EmptyState icon="pie-chart" title="조건에 맞는 자산이 없습니다" description="자산 기록을 추가하거나 필터를 조정해보세요." action={<button type="button" onClick={() => onAdd("savings")} className="rounded-2xl bg-sky-400 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200">자산 추가</button>} /></div>}</div>
         <div className="border-t border-line px-4 py-3 text-[11px] text-faint sm:px-5">총 {visible.length}개 · 상세를 누르면 수정·삭제할 수 있습니다.</div>
       </section>
       <section className="rounded-3xl border border-amber-400/15 bg-amber-500/[0.04] p-5 sm:p-6"><SectionHeading eyebrow="Maturity watch" title="만기 일정" /><div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{maturities.slice(0, 6).map((record) => <button type="button" key={record.id} onClick={() => onOpenDetail(record)} className="rounded-3xl border border-amber-300/15 bg-card-soft px-3.5 py-3 text-left transition hover:border-amber-300/35 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"><div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-medium text-amber-100">{record.title}</span><Icon name="chevron-right" size={14} className="text-amber-200/60" /></div><p className="mt-2 text-xs text-amber-100/60">{dateText(record.maturityDate)} · {formatRelativeDue(record.maturityDate || record.date)}</p></button>)}{!maturities.length && <p className="text-xs text-faint">등록된 만기 일정이 없습니다. 예금·적금에 만기일을 추가해보세요.</p>}</div></section>
@@ -1489,7 +1508,7 @@ function TasksPanel({
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div className="rounded-3xl border border-sky-400/15 bg-sky-500/[0.05] p-4"><p className="text-xs text-sky-200/70">진행 중</p><p className="mt-2 text-xl font-semibold text-sky-100">{(counts["in-progress"] || 0) + (counts.planned || 0)}건</p></div><div className="rounded-3xl border border-violet-400/15 bg-violet-500/[0.05] p-4"><p className="text-xs text-violet-200/70">발송 대기</p><p className="mt-2 text-xl font-semibold text-violet-100">{counts.sent || 0}건</p></div><div className="rounded-3xl border border-emerald-400/15 bg-emerald-500/[0.05] p-4"><p className="text-xs text-emerald-200/70">입금 완료</p><p className="mt-2 text-xl font-semibold text-emerald-100">{counts.paid || 0}건</p></div><div className="rounded-3xl border border-line bg-card p-4"><p className="text-xs text-faint">작업 보수 합계</p><p className="mt-2 text-xl font-semibold tabular-nums text-ink">{currency(tasks.reduce((sum, task) => sum + (task.amount || 0), 0))}</p></div></div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><div className="rounded-3xl border border-sky-400/15 bg-sky-500/[0.05] p-4"><p className="text-xs text-sky-200/70">진행 중</p><p className="mt-2 text-xl font-semibold text-sky-100">{(counts["in-progress"] || 0) + (counts.planned || 0)}건</p></div><div className="rounded-3xl border border-violet-400/15 bg-violet-500/[0.05] p-4"><p className="text-xs text-violet-200/70">발송 대기</p><p className="mt-2 text-xl font-semibold text-violet-100">{counts.sent || 0}건</p></div><div className="rounded-3xl border border-emerald-400/15 bg-emerald-500/[0.05] p-4"><p className="text-xs text-emerald-200/70">입금 완료</p><p className="mt-2 text-xl font-semibold text-emerald-100">{counts.paid || 0}건</p></div><div className="rounded-3xl border border-line bg-card p-4"><p className="text-xs text-faint">작업 보수 합계</p><p className="mt-2 text-xl font-semibold tabular-nums text-ink">{currency(tasks.reduce((sum, task) => sum + (task.amount || 0), 0))}</p></div></div>
       <section className="rounded-3xl border border-line bg-card">
         <div className="flex flex-col gap-4 border-b border-line p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-faint">Work board</p><h2 className="mt-1 text-lg font-semibold text-ink">작업 관리</h2><p className="mt-1 text-xs text-faint">작업을 수입 기록과 연결해 정산 흐름을 놓치지 않아요.</p></div><button type="button" onClick={() => setShowForm((value) => !value)} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-400 px-3 text-xs font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"><Icon name="plus" size={14} /> 작업 추가</button></div><div className="flex flex-wrap items-center gap-2"><select aria-label="작업 연도" value={year} onChange={(event) => setYear(event.target.value)} className="h-9 rounded-xl border border-line bg-field px-3 text-xs text-body outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15"><option>{year}</option><option>{String(Number(year) - 1)}</option><option>{String(Number(year) + 1)}</option></select><SelectField compact="sm" id="work-status" label="작업 상태" value={statusFilter} onChange={setStatusFilter} options={["전체 상태", ...statusOptions.map((status) => taskStatusLabels[status])]} /></div></div>
         {showForm && <form onSubmit={createTask} className="grid gap-3 border-b border-line bg-emerald-500/[0.025] p-4 sm:grid-cols-2 sm:p-5"><div className="sm:col-span-2"><FieldLabel htmlFor="task-title" required>작업 이름</FieldLabel><input id="task-title" value={draft.title} onChange={(event) => setDraft((value) => ({ ...value, title: event.target.value }))} className={fieldClass} placeholder="예: 강의 자료 정리" /></div><div><FieldLabel htmlFor="task-work-date">작업일</FieldLabel><input id="task-work-date" type="date" value={draft.workDate} onChange={(event) => setDraft((value) => ({ ...value, workDate: event.target.value }))} className={fieldClass} /></div><div><FieldLabel htmlFor="task-course">과정·과목</FieldLabel><input id="task-course" value={draft.course} onChange={(event) => setDraft((value) => ({ ...value, course: event.target.value }))} className={fieldClass} placeholder="예: 기초 과정" /></div><div><FieldLabel htmlFor="task-session">회차</FieldLabel><input id="task-session" value={draft.session} onChange={(event) => setDraft((value) => ({ ...value, session: event.target.value }))} className={fieldClass} placeholder="예: 3회차" /></div><div><FieldLabel htmlFor="task-client">고객·학교</FieldLabel><input id="task-client" value={draft.clientOrSchool} onChange={(event) => setDraft((value) => ({ ...value, clientOrSchool: event.target.value }))} className={fieldClass} placeholder="예: 고객 또는 학교" /></div><div><FieldLabel htmlFor="task-amount">예상 금액</FieldLabel><input id="task-amount" type="number" min="0" value={draft.amount} onChange={(event) => setDraft((value) => ({ ...value, amount: event.target.value }))} className={`${fieldClass} text-right tabular-nums`} placeholder="0" /></div><div><SelectField id="task-new-status" label="상태" value={taskStatusLabels[draft.status]} onChange={(value) => setDraft((previous) => ({ ...previous, status: statusOptions.find((status) => taskStatusLabels[status] === value) || "planned" }))} options={statusOptions.map((status) => taskStatusLabels[status])} /></div><div className="flex items-end justify-end gap-2 sm:col-span-2"><button type="button" onClick={() => setShowForm(false)} className="h-10 rounded-2xl px-4 text-xs text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">취소</button><button type="submit" className="h-10 rounded-2xl bg-emerald-400 px-5 text-xs font-semibold text-slate-950 hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200">작업 저장</button></div></form>}
@@ -1577,7 +1596,7 @@ export default function GagebuDashboard() {
         amount: transaction.amount,
         date: transaction.date,
         category: transaction.category,
-        source: transaction.incomeDetails?.employer || transaction.incomeDetails?.payer || transaction.incomeDetails?.sourceName || (transaction.type === "expense" ? transaction.source : undefined),
+        source: transaction.incomeDetails?.employer || transaction.incomeDetails?.payer || transaction.incomeDetails?.sourceName,
         account: transaction.type === "expense" ? undefined : transaction.incomeDetails?.paymentDate,
         note: transaction.incomeDetails?.note,
       };
@@ -1605,7 +1624,7 @@ export default function GagebuDashboard() {
       side: order.side,
       quantity: order.quantity,
       unitPrice: order.unitPrice,
-      status: "active",
+      currency: order.currency,
       note: order.memo,
     }));
     return [...transactionRecords, ...savingsRecords, ...stockRecords].sort((left, right) => right.date.localeCompare(left.date));
@@ -1904,8 +1923,8 @@ export default function GagebuDashboard() {
           </nav>
         </header>
 
-        <main className="mx-auto max-w-[1440px] px-4 pb-16 pt-7 sm:px-7 sm:pt-9 xl:px-10">
-          <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm text-faint">{activeView === "overview" ? "오늘의 금융 흐름을 가볍게 확인해보세요." : activeNav.description}</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{activeNav.label}</h2></div><div className="flex items-center gap-2 sm:hidden"><label className="flex flex-1 items-center gap-2 rounded-2xl border border-line bg-card px-3 py-2.5"><Icon name="calendar" size={15} className="text-faint" /><span className="sr-only">기준 월</span><input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} className="w-full bg-transparent text-xs text-body outline-none" /></label><button type="button" onClick={() => setImportOpen(true)} aria-label="엑셀 가져오기" className="flex h-10 w-10 items-center justify-center rounded-2xl border border-sky-400/20 text-sky-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="upload" size={16} /></button></div></div>
+        <main className="mx-auto max-w-[1440px] px-4 pb-12 pt-5 sm:px-7 sm:pt-7 xl:px-10">
+          <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm text-faint">{activeView === "overview" ? "오늘의 금융 흐름을 가볍게 확인해보세요." : activeNav.description}</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{activeNav.label}</h2></div><div className="flex items-center gap-2 sm:hidden"><label className="flex flex-1 items-center gap-2 rounded-2xl border border-line bg-card px-3 py-2.5"><Icon name="calendar" size={15} className="text-faint" /><span className="sr-only">기준 월</span><input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} className="w-full bg-transparent text-xs text-body outline-none" /></label><button type="button" onClick={() => setImportOpen(true)} aria-label="엑셀 가져오기" className="flex h-10 w-10 items-center justify-center rounded-2xl border border-sky-400/20 text-sky-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="upload" size={16} /></button></div></div>
           {error && <div role="alert" className="mb-5 flex items-start gap-3 rounded-3xl border border-rose-400/20 bg-rose-500/[0.07] px-4 py-3 text-sm text-rose-100"><Icon name="info" size={17} className="mt-0.5 text-rose-200" /><div className="flex-1"><p className="font-medium">데이터를 불러오는 중 문제가 생겼습니다.</p><p className="mt-1 text-xs text-rose-100/70">{error}</p></div><button type="button" onClick={() => setError("")} aria-label="오류 닫기" className="rounded-xl p-1 text-rose-200/70 hover:bg-rose-500/10 hover:text-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"><Icon name="close" size={15} /></button></div>}
           {activeView === "overview" && <OverviewPanel records={records} tasks={workItems} month={selectedMonth} loading={loading} onNavigate={setActiveView} onAdd={openAdd} onOpenImport={() => setImportOpen(true)} onOpenDetail={setDetailRecord} />}
           {activeView === "transactions" && <TransactionsPanel records={records} month={selectedMonth} setMonth={setSelectedMonth} year={selectedYear} setYear={setSelectedYear} onAdd={openAdd} onOpenDetail={setDetailRecord} onOpenImport={() => setImportOpen(true)} />}
