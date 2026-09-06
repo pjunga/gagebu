@@ -2,7 +2,7 @@
 
 import { AuthAccountControls } from "@/components/auth-gate";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import {
   createEntityId,
@@ -1004,16 +1004,17 @@ type ImportPreview = XlsxImportPreview & {
 
 function ImportModal({
   open,
+  saving,
   onClose,
   onImport,
   existingFingerprints = [],
 }: {
   open: boolean;
+  saving: boolean;
   onClose: () => void;
   onImport: (file: File, preview: ImportPreview) => void;
   existingFingerprints?: string[];
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
   const [stage, setStage] = useState<"select" | "preview">("select");
   // The file input only exists in the select stage, so its ref is null by the
   // time the user confirms; the chosen file has to outlive that element.
@@ -1069,7 +1070,6 @@ function ImportModal({
     setFile(null);
     setPreview(null);
     setConfirmed(false);
-    if (inputRef.current) inputRef.current.value = "";
   };
 
   return (
@@ -1093,7 +1093,7 @@ function ImportModal({
 
           {stage === "select" && (
             <div>
-              <input ref={inputRef} id="workbook-file" type="file" accept=".xlsx" onChange={handleFile} className="sr-only" />
+              <input id="workbook-file" type="file" accept=".xlsx" onChange={handleFile} className="sr-only" />
               <label htmlFor="workbook-file" className="group flex cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-sky-400/30 bg-sky-500/[0.04] px-6 py-10 text-center transition hover:border-sky-300/60 hover:bg-sky-500/[0.08] focus-within:ring-2 focus-within:ring-sky-300">
                 <span className="flex h-12 w-12 items-center justify-center rounded-3xl bg-sky-500/10 text-sky-200"><Icon name="upload" size={22} /></span>
                 <span className="mt-4 text-sm font-medium text-body">엑셀 파일을 선택하세요</span>
@@ -1126,7 +1126,7 @@ function ImportModal({
               </label>
               <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <button type="button" onClick={onClose} className="h-11 rounded-2xl px-5 text-sm font-medium text-muted transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">취소</button>
-                <button type="button" disabled={!confirmed || !file} onClick={() => file && onImport(file, preview)} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"><Icon name="upload" size={16} /> 확인 후 저장</button>
+                <button type="button" disabled={!confirmed || !file || saving} onClick={() => file && onImport(file, preview)} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"><Icon name="upload" size={16} /> 확인 후 저장</button>
               </div>
             </div>
           )}
@@ -1853,13 +1853,14 @@ export default function GagebuDashboard() {
     }
   };
 
+  const closeImport = useCallback(() => setImportOpen(false), []);
+
   const handleImport = async (file: File, preview: ImportPreview) => {
     setSaving(true);
     setError("");
     try {
       const result = await importXlsxFile(file, repositories, { existingFingerprints });
       const savedTotal = Object.values(result.saved).reduce((sum, value) => sum + value, 0);
-      setImportOpen(false);
       setToast(
         savedTotal
           ? `${savedTotal}건을 저장했습니다${result.skippedExisting ? ` · 중복 ${result.skippedExisting}건 제외` : ""}.`
@@ -1870,6 +1871,7 @@ export default function GagebuDashboard() {
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "엑셀 내역을 저장하지 못했습니다.");
     } finally {
+      setImportOpen(false);
       setSaving(false);
     }
   };
@@ -1997,7 +1999,7 @@ export default function GagebuDashboard() {
       <DetailModal record={detailRecord} onClose={() => setDetailRecord(null)} onEdit={openEdit} onDelete={(record) => setDeleteRecord(record)} />
       <DeleteDialog record={deleteRecord} onClose={() => setDeleteRecord(null)} onConfirm={handleDeleteConfirm} />
       <EntryModal open={entryOpen} initial={entryDraft} editingId={editingRecord?.id} workItems={workItems} saving={saving} onClose={() => { if (!saving) { setEntryOpen(false); setEditingRecord(null); } }} onSave={handleSaveDraft} />
-      <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onImport={handleImport} existingFingerprints={existingFingerprints} />
+      <ImportModal open={importOpen} saving={saving} onClose={closeImport} onImport={handleImport} existingFingerprints={existingFingerprints} />
     </div>
   );
 }
