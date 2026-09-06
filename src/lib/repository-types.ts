@@ -38,7 +38,10 @@ export interface CollectionRepository<T extends BaseEntity> {
   create(item: T): Promise<T>;
   update(item: T): Promise<T>;
   upsert(item: T): Promise<T>;
-  /** Applies several writes with one persist and one notification. */
+  /**
+   * Applies several writes with one persist and one notification. The result
+   * holds the rows that were stored, in no guaranteed order.
+   */
   upsertMany(items: T[]): Promise<T[]>;
   remove(id: string): Promise<void>;
   subscribe(

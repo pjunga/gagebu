@@ -51,6 +51,12 @@ const DOCUMENT_ID_QUERY_LIMIT = 30;
 /** How many id lookups run at once while preparing a batch. */
 const CONCURRENT_READS = 8;
 
+/** Firestore codes that reject the request itself, whatever it carried. */
+function appliesToEveryWrite(error: unknown): boolean {
+  const code = (error as { code?: unknown })?.code;
+  return code === "permission-denied" || code === "unauthenticated" || code === "unavailable";
+}
+
 export const FIREBASE_MIGRATION_STORAGE_KEY =
   "gagebu:firebase-migration-complete";
 
@@ -298,18 +304,39 @@ export class FirebaseRepository<T extends BaseEntity>
           committed += chunk.length;
           written.push(...payloads.map((payload) => payload.stored));
         } catch (error) {
-          // A batch is atomic, so one document the rules reject takes the other
-          // 399 with it. Write them singly to keep the rows that are fine.
-          failure = error;
-          for (const [at, payload] of payloads.entries()) {
-            try {
-              await setDoc(doc(target, chunk[at].id), payload.data);
-              committed += 1;
-              written.push(payload.stored);
-            } catch {
-              rejected.push(chunk[at].id);
+          failure ??= error;
+          // Sign-in and rule failures apply to the whole request, so retrying
+          // document by document would just repeat them a few hundred times.
+          if (appliesToEveryWrite(error)) throw error;
+          // Otherwise the batch is atomic and one document the rules reject
+          // takes the other 399 with it. Write them singly to keep the good
+          // rows, a wave at a time so a long chunk does not block the tab.
+          let refusedHere = 0;
+          for (let at = 0; at < payloads.length; at += CONCURRENT_READS) {
+            const wave = payloads.slice(at, at + CONCURRENT_READS);
+            const outcomes = await Promise.all(
+              wave.map(async (payload, offsetInWave) => {
+                const id = chunk[at + offsetInWave].id;
+                try {
+                  await setDoc(doc(target, id), payload.data);
+                  return { stored: payload.stored, id: undefined };
+                } catch {
+                  return { stored: undefined, id };
+                }
+              }),
+            );
+            for (const outcome of outcomes) {
+              if (outcome.stored) {
+                committed += 1;
+                written.push(outcome.stored);
+              } else if (outcome.id) {
+                refusedHere += 1;
+                rejected.push(outcome.id);
+              }
             }
           }
+          // Every document refused means the cause was not this chunk's data.
+          if (refusedHere === payloads.length) throw error;
         }
       }
       if (rejected.length) {

@@ -34,7 +34,9 @@ export async function subscribeToTransactions(
   if (!isFirebaseConfigured) {
     const repository = getLocalTransactions();
     try {
-      await repository.upsertMany(localItems);
+      // The batch refuses outright if any id is missing; seeding would rather
+      // keep the records that are addressable than none of them.
+      await repository.upsertMany(localItems.filter((item) => item.id?.trim()));
     } catch (error) {
       // Seeding is best effort: report it and still open the stream, the same
       // way the Firebase branch below does.
