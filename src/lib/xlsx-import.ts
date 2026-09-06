@@ -1210,22 +1210,27 @@ async function saveRecords(
   );
   let skippedExisting = 0;
   const saved = { transactions: 0, savingsAccounts: 0, stockOrders: 0, workItems: 0 };
-  const groups: Array<[DomainEntity[], (item: DomainEntity) => Promise<DomainEntity>, Set<string>, keyof typeof saved]> = [
-    [preview.transactions, (item) => repositories.transactions.upsert(item as Transaction), sets[0], "transactions"],
-    [preview.savingsAccounts, (item) => repositories.savingsAccounts.upsert(item as SavingsAccount), sets[1], "savingsAccounts"],
-    [preview.stockOrders, (item) => repositories.stockOrders.upsert(item as StockOrder), sets[2], "stockOrders"],
-    [preview.workItems, (item) => repositories.workItems.upsert(item as WorkItem), sets[3], "workItems"],
+  const groups: Array<[DomainEntity[], (items: DomainEntity[]) => Promise<DomainEntity[]>, Set<string>, keyof typeof saved]> = [
+    [preview.transactions, (items) => repositories.transactions.upsertMany(items as Transaction[]), sets[0], "transactions"],
+    [preview.savingsAccounts, (items) => repositories.savingsAccounts.upsertMany(items as SavingsAccount[]), sets[1], "savingsAccounts"],
+    [preview.stockOrders, (items) => repositories.stockOrders.upsertMany(items as StockOrder[]), sets[2], "stockOrders"],
+    [preview.workItems, (items) => repositories.workItems.upsertMany(items as WorkItem[]), sets[3], "workItems"],
   ];
   for (const [items, save, known, key] of groups) {
+    // Collect first: writing one at a time re-serialises the whole store and
+    // re-renders every subscriber per record, which is quadratic on a big sheet.
+    const pending: DomainEntity[] = [];
     for (const item of items) {
       if (item.fingerprint && known.has(item.fingerprint)) {
         skippedExisting += 1;
         continue;
       }
-      await save(item);
       if (item.fingerprint) known.add(item.fingerprint);
-      saved[key] += 1;
+      pending.push(item);
     }
+    if (!pending.length) continue;
+    await save(pending);
+    saved[key] += pending.length;
   }
   return { ...saved, skippedExisting };
 }

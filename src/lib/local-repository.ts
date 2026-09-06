@@ -361,7 +361,8 @@ export class LocalStorageRepository<T extends BaseEntity>
    * Replaces the stored item; see the Firebase repository for the same
    * contract. Callers spread the existing record in when they mean to keep it.
    */
-  async upsert(item: T): Promise<T> {
+  /** Places one item; the caller decides when to persist and notify. */
+  private apply(item: T): T {
     const id = item.id?.trim();
     if (!id) {
       throw new RepositoryError("기록 식별자가 없습니다.", {
@@ -386,9 +387,27 @@ export class LocalStorageRepository<T extends BaseEntity>
     if (existingIndex >= 0) this.items[existingIndex] = updated;
     else if (fingerprintIndex >= 0) this.items[fingerprintIndex] = updated;
     else this.items.push(updated);
+    return updated;
+  }
+
+  async upsert(item: T): Promise<T> {
+    const updated = this.apply(item);
     this.persist();
     this.emit();
     return cloneStored(updated);
+  }
+
+  /**
+   * Writes a whole batch behind a single persist and a single notification.
+   * Doing it one at a time re-serialises the store and re-renders every
+   * subscriber per record, which is quadratic once an import is large.
+   */
+  async upsertMany(items: T[]): Promise<T[]> {
+    if (!items.length) return [];
+    const updated = items.map((item) => this.apply(item));
+    this.persist();
+    this.emit();
+    return updated.map((item) => cloneStored(item));
   }
 
   async remove(id: string): Promise<void> {

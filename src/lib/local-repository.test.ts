@@ -69,3 +69,37 @@ test("two subscriptions survive independently when they share a function", async
   await repositoryUnderTest.upsert(transaction());
   assert.equal(received.length - before, 1);
 });
+
+test("upsertMany writes the batch behind one notification", async () => {
+  const repositoryUnderTest = repository();
+  const batches: number[] = [];
+  await repositoryUnderTest.subscribe((items) => void batches.push(items.length));
+
+  const before = batches.length;
+  const written = await repositoryUnderTest.upsertMany([
+    transaction({ id: "t1", fingerprint: "a" }),
+    transaction({ id: "t2", fingerprint: "b" }),
+    transaction({ id: "t3", fingerprint: "c" }),
+  ]);
+
+  assert.equal(written.length, 3);
+  assert.equal((await repositoryUnderTest.list()).length, 3);
+  // One notification for the batch, not one per record.
+  assert.equal(batches.length - before, 1);
+  assert.equal(batches.at(-1), 3);
+});
+
+test("upsertMany keeps the placement rules of a single upsert", async () => {
+  const repositoryUnderTest = repository();
+  const created = await repositoryUnderTest.upsert(transaction({ id: "t1", fingerprint: "a" }));
+  await repositoryUnderTest.upsertMany([
+    transaction({ id: "t9", fingerprint: "a", memo: "저녁" }),
+    transaction({ id: "t2", fingerprint: "b" }),
+  ]);
+
+  const stored = await repositoryUnderTest.list();
+  assert.equal(stored.length, 2);
+  const matched = stored.find((item) => item.fingerprint === "a");
+  assert.equal(matched?.memo, "저녁");
+  assert.equal(matched?.createdAt, created.createdAt);
+});

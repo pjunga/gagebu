@@ -40,7 +40,10 @@ import {
   type Unsubscribe,
 } from "./repository-types";
 
-export const FIREBASE_MIGRATION_STORAGE_KEY =
+export /** Firestore caps a batch at 500 writes; the migration path uses the same size. */
+const FIREBASE_BATCH_SIZE = 400;
+
+const FIREBASE_MIGRATION_STORAGE_KEY =
   "gagebu:firebase-migration-complete";
 
 function ensureFirebase(): NonNullable<typeof db> {
@@ -219,6 +222,61 @@ export class FirebaseRepository<T extends BaseEntity>
         createdAt: typeof createdAt === "string" ? createdAt : nowIso(),
         updatedAt: nowIso(),
       };
+    } catch (error) {
+      if (error instanceof RepositoryError) throw error;
+      throw new RepositoryError("Firebase에 기록을 저장하지 못했습니다.", {
+        code: "firebase/write-failed",
+        operation: "upsert",
+        cause: error,
+      });
+    }
+  }
+
+  /**
+   * Writes a whole batch in as few round trips as Firestore allows. Stored
+   * createdAt values are read once for the batch rather than per document.
+   */
+  async upsertMany(items: T[]): Promise<T[]> {
+    if (!items.length) return [];
+    for (const item of items) {
+      if (!item.id?.trim()) {
+        throw new RepositoryError("기록 식별자가 없습니다.", {
+          code: "validation/missing-id",
+          operation: "upsert",
+        });
+      }
+    }
+    try {
+      const firestore = ensureFirebase();
+      const target = await this.collectionForUser();
+      const snapshot = await getDocs(query(target));
+      const storedCreatedAt = new Map(snapshot.docs.map((entry) => [entry.id, entry.data().createdAt]));
+      const written: T[] = [];
+      for (let offset = 0; offset < items.length; offset += FIREBASE_BATCH_SIZE) {
+        const chunk = items.slice(offset, offset + FIREBASE_BATCH_SIZE);
+        const batch = writeBatch(firestore);
+        for (const item of chunk) {
+          const id = item.id.trim();
+          const current = this.normalize({ ...item, id });
+          const existing = storedCreatedAt.get(id);
+          batch.set(
+            doc(target, id),
+            removeUndefined({
+              ...current,
+              createdAt: current.createdAt ?? existing ?? serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            }) as DocumentData,
+          );
+          const createdAt = current.createdAt ?? normalizeFirestoreValue(existing);
+          written.push({
+            ...current,
+            createdAt: typeof createdAt === "string" ? createdAt : nowIso(),
+            updatedAt: nowIso(),
+          });
+        }
+        await batch.commit();
+      }
+      return written;
     } catch (error) {
       if (error instanceof RepositoryError) throw error;
       throw new RepositoryError("Firebase에 기록을 저장하지 못했습니다.", {
