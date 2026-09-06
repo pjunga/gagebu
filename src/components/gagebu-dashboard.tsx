@@ -20,6 +20,7 @@ import {
   type XlsxImportPreview,
 } from "@/lib/xlsx-import";
 import { Icon, type IconName } from "./icons";
+import ThemeToggle from "./theme-toggle";
 
 export type ViewKey = "overview" | "transactions" | "assets" | "tasks";
 export type EntryKind =
@@ -239,19 +240,19 @@ const recordToDraft = (record: FinanceRecord): EntryDraft => ({
 function toneClasses(tone: string, soft = false) {
   const map: Record<string, string> = {
     rose: soft
-      ? "bg-rose-500/10 text-rose-200 ring-1 ring-inset ring-rose-400/20"
-      : "bg-rose-500 text-white",
+      ? "bg-rose-500/12 text-rose-200 ring-1 ring-inset ring-rose-400/25"
+      : "bg-rose-400 text-rose-950",
     emerald: soft
-      ? "bg-emerald-500/10 text-emerald-200 ring-1 ring-inset ring-emerald-400/20"
-      : "bg-emerald-500 text-slate-950",
+      ? "bg-emerald-500/12 text-emerald-200 ring-1 ring-inset ring-emerald-400/25"
+      : "bg-emerald-400 text-emerald-950",
     amber: soft
-      ? "bg-amber-500/10 text-amber-200 ring-1 ring-inset ring-amber-400/20"
+      ? "bg-amber-500/12 text-amber-200 ring-1 ring-inset ring-amber-400/25"
       : "bg-amber-400 text-amber-950",
     sky: soft
-      ? "bg-sky-500/10 text-sky-200 ring-1 ring-inset ring-sky-400/20"
+      ? "bg-sky-500/12 text-sky-200 ring-1 ring-inset ring-sky-400/25"
       : "bg-sky-400 text-sky-950",
     violet: soft
-      ? "bg-violet-500/10 text-violet-200 ring-1 ring-inset ring-violet-400/20"
+      ? "bg-violet-500/12 text-violet-200 ring-1 ring-inset ring-violet-400/25"
       : "bg-violet-400 text-violet-950",
   };
   return map[tone] ?? map.emerald;
@@ -274,13 +275,13 @@ function StatusBadge({ status }: { status?: AssetStatus | WorkStatus }) {
   const styles: Record<string, string> = {
     active: "bg-emerald-500/10 text-emerald-200 ring-emerald-400/20",
     "maturity-soon": "bg-amber-500/10 text-amber-200 ring-amber-400/20",
-    closed: "bg-slate-500/10 text-slate-300 ring-slate-400/20",
-    planned: "bg-slate-500/10 text-slate-300 ring-slate-400/20",
+    closed: "bg-slate-500/10 text-body ring-slate-400/20",
+    planned: "bg-slate-500/10 text-body ring-slate-400/20",
     "in-progress": "bg-sky-500/10 text-sky-200 ring-sky-400/20",
     completed: "bg-emerald-500/10 text-emerald-200 ring-emerald-400/20",
     sent: "bg-violet-500/10 text-violet-200 ring-violet-400/20",
     paid: "bg-emerald-500/10 text-emerald-200 ring-emerald-400/20",
-    todo: "bg-slate-500/10 text-slate-300 ring-slate-400/20",
+    todo: "bg-slate-500/10 text-body ring-slate-400/20",
     done: "bg-emerald-500/10 text-emerald-200 ring-emerald-400/20",
     cancelled: "bg-rose-500/10 text-rose-200 ring-rose-400/20",
   };
@@ -298,8 +299,8 @@ function StatusBadge({ status }: { status?: AssetStatus | WorkStatus }) {
 function KindBadge({ kind }: { kind: EntryKind }) {
   const tone = entryTones[kind];
   return (
-    <span className="inline-flex items-center gap-1.5 text-xs text-slate-300">
-      <span className={`flex h-6 w-6 items-center justify-center rounded-lg ${toneClasses(tone, true)}`}>
+    <span className="inline-flex items-center gap-1.5 text-xs text-body">
+      <span className={`flex h-6 w-6 items-center justify-center rounded-xl ${toneClasses(tone, true)}`}>
         <Icon name={entryIcons[kind]} size={13} />
       </span>
       {entryLabels[kind]}
@@ -319,8 +320,8 @@ function SectionHeading({
   return (
     <div className="flex flex-wrap items-end justify-between gap-3">
       <div>
-        {eyebrow && <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">{eyebrow}</p>}
-        <h2 className="text-lg font-semibold tracking-tight text-slate-100">{title}</h2>
+        {eyebrow && <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-faint">{eyebrow}</p>}
+        <h2 className="text-lg font-semibold tracking-tight text-ink">{title}</h2>
       </div>
       {action}
     </div>
@@ -329,10 +330,10 @@ function SectionHeading({
 
 function LoadingCard() {
   return (
-    <div className="animate-pulse rounded-2xl border border-white/[0.08] bg-white/[0.035] p-5">
-      <div className="h-3 w-20 rounded bg-white/10" />
-      <div className="mt-4 h-8 w-32 rounded bg-white/10" />
-      <div className="mt-3 h-2 w-24 rounded bg-white/5" />
+    <div className="animate-pulse rounded-3xl border border-line bg-card p-5">
+      <div className="h-3 w-20 rounded bg-card-strong" />
+      <div className="mt-4 h-8 w-32 rounded bg-card-strong" />
+      <div className="mt-3 h-2 w-24 rounded bg-card" />
     </div>
   );
 }
@@ -404,12 +405,12 @@ function EmptyState({
   action?: React.ReactNode;
 }) {
   return (
-    <div className="flex min-h-52 flex-col items-center justify-center rounded-2xl border border-dashed border-white/[0.12] bg-white/[0.02] px-6 py-10 text-center">
-      <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-2xl bg-white/[0.07] text-slate-400">
+    <div className="flex min-h-52 flex-col items-center justify-center rounded-3xl border border-dashed border-line-strong bg-card-soft px-6 py-10 text-center">
+      <span className="mb-3 flex h-11 w-11 items-center justify-center rounded-3xl bg-card-strong text-muted">
         <Icon name={icon} size={20} />
       </span>
-      <h3 className="text-sm font-medium text-slate-200">{title}</h3>
-      <p className="mt-1 max-w-sm text-xs leading-5 text-slate-500">{description}</p>
+      <h3 className="text-sm font-medium text-body">{title}</h3>
+      <p className="mt-1 max-w-sm text-xs leading-5 text-faint">{description}</p>
       {action && <div className="mt-4">{action}</div>}
     </div>
   );
@@ -433,13 +434,13 @@ function StatCard({
   const content = (
     <>
       <div className="flex items-start justify-between gap-3">
-        <p className="text-xs font-medium text-slate-400">{label}</p>
-        <span className={`flex h-8 w-8 items-center justify-center rounded-xl ${toneClasses(tone, true)}`}>
+        <p className="text-xs font-medium text-muted">{label}</p>
+        <span className={`flex h-8 w-8 items-center justify-center rounded-2xl ${toneClasses(tone, true)}`}>
           <Icon name={icon} size={16} />
         </span>
       </div>
-      <p className="mt-4 text-2xl font-semibold tracking-tight text-white">{value}</p>
-      <p className="mt-2 text-[11px] text-slate-500">{subtext}</p>
+      <p className="mt-4 text-2xl font-semibold tracking-tight text-ink">{value}</p>
+      <p className="mt-2 text-[11px] text-faint">{subtext}</p>
     </>
   );
   if (onClick) {
@@ -447,21 +448,21 @@ function StatCard({
       <button
         type="button"
         onClick={onClick}
-        className="group rounded-2xl border border-white/[0.08] bg-white/[0.045] p-5 text-left shadow-[0_12px_40px_rgba(0,0,0,0.12)] transition hover:-translate-y-0.5 hover:border-white/[0.16] hover:bg-white/[0.065] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+        className="group rounded-3xl border border-line bg-card p-5 text-left shadow-[0_12px_40px_rgba(0,0,0,0.12)] transition hover:-translate-y-0.5 hover:border-line-strong hover:bg-card-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
       >
         {content}
       </button>
     );
   }
   return (
-    <div className="rounded-2xl border border-white/[0.08] bg-white/[0.045] p-5 shadow-[0_12px_40px_rgba(0,0,0,0.12)]">
+    <div className="rounded-3xl border border-line bg-card p-5 shadow-[0_12px_40px_rgba(0,0,0,0.12)]">
       {content}
     </div>
   );
 }
 
 const fieldClass =
-  "mt-2 h-11 w-full rounded-xl border border-white/[0.1] bg-slate-950/70 px-3.5 text-sm text-slate-100 outline-none transition placeholder:text-slate-600 hover:border-white/[0.18] focus:border-emerald-400/70 focus:ring-2 focus:ring-emerald-400/15";
+  "mt-2 h-11 w-full rounded-2xl border border-line bg-field px-3.5 text-sm text-ink outline-none transition placeholder:text-faint hover:border-line-strong focus:border-emerald-400/70 focus:ring-2 focus:ring-emerald-400/15";
 const selectClass = `${fieldClass} appearance-none pr-9`;
 
 function FieldLabel({
@@ -474,7 +475,7 @@ function FieldLabel({
   required?: boolean;
 }) {
   return (
-    <label htmlFor={htmlFor} className="text-xs font-medium text-slate-300">
+    <label htmlFor={htmlFor} className="text-xs font-medium text-body">
       {children}
       {required && <span className="ml-1 text-rose-300" aria-hidden="true">*</span>}
     </label>
@@ -508,16 +509,16 @@ function SelectField({
         value={value}
         onChange={(event) => onChange(event.target.value)}
         className={compact
-          ? `${compact === "sm" ? "h-9 rounded-lg px-3 text-xs" : "h-10 rounded-xl px-3.5 text-sm"} w-full appearance-none border border-white/[0.1] bg-slate-950/70 pr-9 text-slate-100 outline-none transition hover:border-white/[0.18] focus:border-emerald-400/70 focus:ring-2 focus:ring-emerald-400/15`
+          ? `${compact === "sm" ? "h-9 rounded-xl px-3 text-xs" : "h-10 rounded-2xl px-3.5 text-sm"} w-full appearance-none border border-line bg-field pr-9 text-ink outline-none transition hover:border-line-strong focus:border-emerald-400/70 focus:ring-2 focus:ring-emerald-400/15`
           : selectClass}
       >
         {options.map((option) => (
-          <option key={option} value={option} className="bg-slate-900">
+          <option key={option} value={option} className="bg-surface">
             {option}
           </option>
         ))}
       </select>
-      <Icon name="chevron-down" size={15} className={`pointer-events-none absolute right-3 text-slate-500 ${compact ? "top-1/2 -translate-y-1/2" : "top-[34px]"}`} />
+      <Icon name="chevron-down" size={15} className={`pointer-events-none absolute right-3 text-faint ${compact ? "top-1/2 -translate-y-1/2" : "top-[34px]"}`} />
     </div>
   );
 }
@@ -600,27 +601,27 @@ function EntryModal({
   const stockTotal = Number(draft.quantity) * Number(draft.unitPrice);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/75 p-0 backdrop-blur-sm sm:items-center sm:p-6">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-scrim p-0 backdrop-blur-sm sm:items-center sm:p-6">
       <div
         ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="entry-dialog-title"
-        className="flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl border border-white/[0.12] bg-[#111827] shadow-2xl shadow-black/50 sm:max-h-[90vh] sm:rounded-3xl"
+        className="flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:max-h-[90vh] sm:rounded-3xl"
       >
-        <div className="flex items-start justify-between gap-4 border-b border-white/[0.08] px-5 py-5 sm:px-7">
+        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-5 sm:px-7">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-emerald-300/80">기록하기</p>
-            <h2 id="entry-dialog-title" className="mt-1 text-xl font-semibold tracking-tight text-white">
+            <h2 id="entry-dialog-title" className="mt-1 text-xl font-semibold tracking-tight text-ink">
               {isEditing ? "내역 수정" : "새 내역 추가"}
             </h2>
-            <p className="mt-1 text-xs text-slate-500">먼저 기록 유형을 선택하면 필요한 항목만 표시됩니다.</p>
+            <p className="mt-1 text-xs text-faint">먼저 기록 유형을 선택하면 필요한 항목만 표시됩니다.</p>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="내역 추가 닫기"
-            className="rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.08] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+            className="rounded-2xl p-2 text-muted transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
           >
             <Icon name="close" size={20} />
           </button>
@@ -628,7 +629,7 @@ function EntryModal({
 
         <form onSubmit={handleSubmit} className="overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
           <fieldset>
-            <legend className="text-xs font-medium text-slate-300">기록 유형</legend>
+            <legend className="text-xs font-medium text-body">기록 유형</legend>
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
               {(Object.keys(entryLabels) as EntryKind[]).map((kind) => {
                 const selected = draft.kind === kind;
@@ -638,10 +639,10 @@ function EntryModal({
                     type="button"
                     aria-pressed={selected}
                     onClick={() => handleKindChange(kind)}
-                    className={`flex min-h-[74px] flex-col items-start justify-between rounded-2xl border px-3 py-3 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 ${
+                    className={`flex min-h-[74px] flex-col items-start justify-between rounded-3xl border px-3 py-3 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 ${
                       selected
                         ? `${entrySelectedBorders[kind]} ${toneClasses(entryTones[kind], true)}`
-                        : "border-white/[0.08] bg-white/[0.025] text-slate-500 hover:border-white/[0.18] hover:bg-white/[0.05]"
+                        : "border-line bg-card-soft text-faint hover:border-line-strong hover:bg-card"
                     }`}
                   >
                     <Icon name={entryIcons[kind]} size={17} />
@@ -695,13 +696,13 @@ function EntryModal({
                     aria-invalid={Boolean(validationError)}
                     aria-describedby={validationError ? "entry-validation-error" : undefined}
                   />
-                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">원</span>
+                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">원</span>
                 </div>
               </div>
             ) : (
               <div>
-                <p className="text-xs font-medium text-slate-300">주문 금액</p>
-                <div className="mt-2 flex h-11 items-center justify-end rounded-xl border border-white/[0.1] bg-slate-950/70 px-3.5 text-sm font-semibold tabular-nums text-violet-200">
+                <p className="text-xs font-medium text-body">주문 금액</p>
+                <div className="mt-2 flex h-11 items-center justify-end rounded-2xl border border-line bg-field px-3.5 text-sm font-semibold tabular-nums text-violet-200">
                   {stockTotal > 0 ? currency(stockTotal) : "수량 × 주문 단가"}
                 </div>
               </div>
@@ -764,10 +765,10 @@ function EntryModal({
                   <FieldLabel htmlFor="side-work-item">연결 작업 (선택)</FieldLabel>
                   <div className="relative">
                     <select id="side-work-item" value={draft.workItemId} onChange={(event) => update("workItemId", event.target.value)} className={selectClass}>
-                      <option value="" className="bg-slate-900">연결하지 않음</option>
-                      {workItems.filter((item) => item.status !== "cancelled").map((item) => <option key={item.id} value={item.id} className="bg-slate-900">{item.title}</option>)}
+                      <option value="" className="bg-surface">연결하지 않음</option>
+                      {workItems.filter((item) => item.status !== "cancelled").map((item) => <option key={item.id} value={item.id} className="bg-surface">{item.title}</option>)}
                     </select>
-                    <Icon name="chevron-down" size={15} className="pointer-events-none absolute right-3 top-[34px] text-slate-500" />
+                    <Icon name="chevron-down" size={15} className="pointer-events-none absolute right-3 top-[34px] text-faint" />
                   </div>
                 </div>
               </>
@@ -790,11 +791,11 @@ function EntryModal({
                 </div>
                 <div>
                   <FieldLabel htmlFor="savings-monthly">월 납입액</FieldLabel>
-                  <div className="relative"><input id="savings-monthly" type="number" min="0" step="1000" value={draft.monthlyContribution} onChange={(event) => update("monthlyContribution", event.target.value)} className={`${fieldClass} pr-12 text-right tabular-nums`} placeholder="0" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">원</span></div>
+                  <div className="relative"><input id="savings-monthly" type="number" min="0" step="1000" value={draft.monthlyContribution} onChange={(event) => update("monthlyContribution", event.target.value)} className={`${fieldClass} pr-12 text-right tabular-nums`} placeholder="0" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">원</span></div>
                 </div>
                 <div>
                   <FieldLabel htmlFor="savings-balance">현재 잔액</FieldLabel>
-                  <div className="relative"><input id="savings-balance" type="number" min="0" step="1000" value={draft.balance} onChange={(event) => update("balance", event.target.value)} className={`${fieldClass} pr-12 text-right tabular-nums`} placeholder="예치 금액과 같으면 비워두세요" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">원</span></div>
+                  <div className="relative"><input id="savings-balance" type="number" min="0" step="1000" value={draft.balance} onChange={(event) => update("balance", event.target.value)} className={`${fieldClass} pr-12 text-right tabular-nums`} placeholder="예치 금액과 같으면 비워두세요" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">원</span></div>
                 </div>
                 <SelectField id="savings-status" label="상태" value={assetStatusLabels[draft.status]} onChange={(value) => update("status", (Object.keys(assetStatusLabels) as AssetStatus[]).find((status) => assetStatusLabels[status] === value) || "active")} options={Object.values(assetStatusLabels)} />
               </>
@@ -818,18 +819,18 @@ function EntryModal({
                   <FieldLabel htmlFor="stock-unit-price" required>주문 단가</FieldLabel>
                   <div className="relative">
                     <input id="stock-unit-price" type="number" min="0" step="100" value={draft.unitPrice} onChange={(event) => update("unitPrice", event.target.value)} className={`${fieldClass} pr-12 text-right tabular-nums`} placeholder="0" />
-                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">원</span>
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">원</span>
                   </div>
                 </div>
                 <div>
                   <FieldLabel htmlFor="stock-principal">주문 후 원금·잔액</FieldLabel>
-                  <div className="relative"><input id="stock-principal" type="number" min="0" step="1000" value={draft.principalOrBalance} onChange={(event) => update("principalOrBalance", event.target.value)} className={`${fieldClass} pr-12 text-right tabular-nums`} placeholder="선택 입력" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-500">원</span></div>
+                  <div className="relative"><input id="stock-principal" type="number" min="0" step="1000" value={draft.principalOrBalance} onChange={(event) => update("principalOrBalance", event.target.value)} className={`${fieldClass} pr-12 text-right tabular-nums`} placeholder="선택 입력" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">원</span></div>
                 </div>
                 <fieldset className="sm:col-span-2">
-                  <legend className="text-xs font-medium text-slate-300">주문 구분</legend>
+                  <legend className="text-xs font-medium text-body">주문 구분</legend>
                   <div className="mt-2 grid grid-cols-2 gap-2">
                     {(["buy", "sell"] as const).map((side) => (
-                      <label key={side} className={`flex cursor-pointer items-center gap-2 rounded-xl border px-3.5 py-3 text-sm transition ${draft.side === side ? "border-violet-400/50 bg-violet-500/10 text-violet-100" : "border-white/[0.1] text-slate-400 hover:border-white/[0.2]"}`}>
+                      <label key={side} className={`flex cursor-pointer items-center gap-2 rounded-2xl border px-3.5 py-3 text-sm transition ${draft.side === side ? "border-violet-400/50 bg-violet-500/10 text-violet-100" : "border-line text-muted hover:border-line-strong"}`}>
                         <input type="radio" name="stock-side" value={side} checked={draft.side === side} onChange={() => update("side", side)} className="accent-violet-400" />
                         {side === "buy" ? "매수" : "매도"}
                       </label>
@@ -849,15 +850,15 @@ function EntryModal({
           </div>
 
           {validationError && (
-            <p id="entry-validation-error" role="alert" className="mt-4 flex items-center gap-2 rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2.5 text-xs text-rose-200">
+            <p id="entry-validation-error" role="alert" className="mt-4 flex items-center gap-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-3 py-2.5 text-xs text-rose-200">
               <Icon name="info" size={15} />
               {validationError}
             </p>
           )}
 
-          <div className="mt-6 flex flex-col-reverse gap-2 border-t border-white/[0.08] pt-5 sm:flex-row sm:justify-end">
-            <button type="button" onClick={onClose} className="h-11 rounded-xl px-5 text-sm font-medium text-slate-400 transition hover:bg-white/[0.06] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">취소</button>
-            <button type="submit" disabled={saving} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-400 px-6 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-wait disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200">
+          <div className="mt-6 flex flex-col-reverse gap-2 border-t border-line pt-5 sm:flex-row sm:justify-end">
+            <button type="button" onClick={onClose} className="h-11 rounded-2xl px-5 text-sm font-medium text-muted transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">취소</button>
+            <button type="submit" disabled={saving} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-emerald-400 px-6 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-wait disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200">
               {saving && <Icon name="refresh" size={16} className="animate-spin" />}
               {saving ? "저장 중…" : isEditing ? "변경 저장" : "내역 저장"}
             </button>
@@ -910,31 +911,31 @@ function DetailModal({
   ].filter(Boolean) as string[][];
 
   return (
-    <div className="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/75 p-0 backdrop-blur-sm sm:items-center sm:p-6">
-      <div role="dialog" aria-modal="true" aria-labelledby="detail-dialog-title" className="w-full max-w-lg overflow-hidden rounded-t-3xl border border-white/[0.12] bg-[#111827] shadow-2xl shadow-black/50 sm:rounded-3xl">
-        <div className="flex items-start justify-between border-b border-white/[0.08] px-5 py-5 sm:px-7">
+    <div className="fixed inset-0 z-40 flex items-end justify-center bg-scrim p-0 backdrop-blur-sm sm:items-center sm:p-6">
+      <div role="dialog" aria-modal="true" aria-labelledby="detail-dialog-title" className="w-full max-w-lg overflow-hidden rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:rounded-3xl">
+        <div className="flex items-start justify-between border-b border-line px-5 py-5 sm:px-7">
           <div className="min-w-0">
             <KindBadge kind={record.kind} />
-            <h2 id="detail-dialog-title" className="mt-3 truncate text-xl font-semibold text-white">{record.title}</h2>
+            <h2 id="detail-dialog-title" className="mt-3 truncate text-xl font-semibold text-ink">{record.title}</h2>
             <p className={`mt-2 text-2xl font-semibold tabular-nums ${record.kind === "expense" ? "text-rose-200" : "text-emerald-200"}`}>
               {record.kind === "expense" ? "−" : record.kind === "stock-order" && record.side === "sell" ? "+" : "+"}{currency(record.amount)}
             </p>
           </div>
-          <button type="button" onClick={onClose} aria-label="상세 닫기" className="rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.08] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"><Icon name="close" size={20} /></button>
+          <button type="button" onClick={onClose} aria-label="상세 닫기" className="rounded-2xl p-2 text-muted transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"><Icon name="close" size={20} /></button>
         </div>
         <div className="px-5 py-5 sm:px-7">
-          <dl className="divide-y divide-white/[0.07] rounded-2xl border border-white/[0.07] bg-white/[0.025] px-4">
+          <dl className="divide-y divide-line rounded-3xl border border-line bg-card-soft px-4">
             {detailRows.map(([label, value]) => (
               <div key={label} className="flex items-center justify-between gap-4 py-3 text-sm">
-                <dt className="text-slate-500">{label}</dt>
-                <dd className="text-right text-slate-200">{value}</dd>
+                <dt className="text-faint">{label}</dt>
+                <dd className="text-right text-body">{value}</dd>
               </div>
             ))}
           </dl>
-          {record.note && <p className="mt-4 rounded-2xl bg-white/[0.035] px-4 py-3 text-sm leading-6 text-slate-400">{record.note}</p>}
+          {record.note && <p className="mt-4 rounded-3xl bg-card px-4 py-3 text-sm leading-6 text-muted">{record.note}</p>}
           <div className="mt-5 flex gap-2">
-            <button type="button" onClick={() => onDelete(record)} className="inline-flex h-11 items-center gap-2 rounded-xl border border-rose-400/20 px-4 text-sm font-medium text-rose-200 transition hover:bg-rose-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"><Icon name="trash" size={16} /> 삭제</button>
-            <button type="button" onClick={() => onEdit(record)} className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-white/[0.08] px-4 text-sm font-medium text-white transition hover:bg-white/[0.14] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"><Icon name="edit" size={16} /> 수정</button>
+            <button type="button" onClick={() => onDelete(record)} className="inline-flex h-11 items-center gap-2 rounded-2xl border border-rose-400/20 px-4 text-sm font-medium text-rose-200 transition hover:bg-rose-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"><Icon name="trash" size={16} /> 삭제</button>
+            <button type="button" onClick={() => onEdit(record)} className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl bg-card-strong px-4 text-sm font-medium text-ink transition hover:bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"><Icon name="edit" size={16} /> 수정</button>
           </div>
         </div>
       </div>
@@ -961,14 +962,14 @@ function DeleteDialog({
   }, [onClose, record]);
   if (!record) return null;
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 p-5 backdrop-blur-sm">
-      <div role="alertdialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-copy" className="w-full max-w-sm rounded-3xl border border-white/[0.12] bg-[#111827] p-6 shadow-2xl shadow-black/60">
-        <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-200"><Icon name="trash" size={20} /></span>
-        <h2 id="delete-title" className="mt-5 text-lg font-semibold text-white">내역을 삭제할까요?</h2>
-        <p id="delete-copy" className="mt-2 text-sm leading-6 text-slate-400"><span className="font-medium text-slate-200">{record.title}</span> 내역을 삭제하면 다시 복구할 수 없습니다.</p>
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-scrim p-5 backdrop-blur-sm">
+      <div role="alertdialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-copy" className="w-full max-w-sm rounded-3xl border border-line-strong bg-surface p-6 shadow-2xl shadow-black/60">
+        <span className="flex h-11 w-11 items-center justify-center rounded-3xl bg-rose-500/10 text-rose-200"><Icon name="trash" size={20} /></span>
+        <h2 id="delete-title" className="mt-5 text-lg font-semibold text-ink">내역을 삭제할까요?</h2>
+        <p id="delete-copy" className="mt-2 text-sm leading-6 text-muted"><span className="font-medium text-body">{record.title}</span> 내역을 삭제하면 다시 복구할 수 없습니다.</p>
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button type="button" onClick={onClose} className="h-11 rounded-xl px-4 text-sm font-medium text-slate-400 transition hover:bg-white/[0.06] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">취소</button>
-          <button type="button" onClick={onConfirm} className="h-11 rounded-xl bg-rose-500 px-5 text-sm font-semibold text-white transition hover:bg-rose-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300">삭제하기</button>
+          <button type="button" onClick={onClose} className="h-11 rounded-2xl px-4 text-sm font-medium text-muted transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">취소</button>
+          <button type="button" onClick={onConfirm} className="h-11 rounded-2xl bg-rose-500 px-5 text-sm font-semibold text-ink transition hover:bg-rose-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300">삭제하기</button>
         </div>
       </div>
     </div>
@@ -1044,60 +1045,60 @@ function ImportModal({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/75 p-0 backdrop-blur-sm sm:items-center sm:p-6">
-      <div role="dialog" aria-modal="true" aria-labelledby="import-dialog-title" className="w-full max-w-xl overflow-hidden rounded-t-3xl border border-white/[0.12] bg-[#111827] shadow-2xl shadow-black/50 sm:rounded-3xl">
-        <div className="flex items-start justify-between gap-4 border-b border-white/[0.08] px-5 py-5 sm:px-7">
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-scrim p-0 backdrop-blur-sm sm:items-center sm:p-6">
+      <div role="dialog" aria-modal="true" aria-labelledby="import-dialog-title" className="w-full max-w-xl overflow-hidden rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:rounded-3xl">
+        <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-5 sm:px-7">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-300/80">데이터 가져오기</p>
-            <h2 id="import-dialog-title" className="mt-1 text-xl font-semibold tracking-tight text-white">엑셀 내역 불러오기</h2>
-            <p className="mt-1 text-xs text-slate-500">파일은 이 기기에서 미리보기한 뒤 확인 후 저장합니다.</p>
+            <h2 id="import-dialog-title" className="mt-1 text-xl font-semibold tracking-tight text-ink">엑셀 내역 불러오기</h2>
+            <p className="mt-1 text-xs text-faint">파일은 이 기기에서 미리보기한 뒤 확인 후 저장합니다.</p>
           </div>
-          <button type="button" onClick={onClose} aria-label="가져오기 닫기" className="rounded-xl p-2 text-slate-400 transition hover:bg-white/[0.08] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="close" size={20} /></button>
+          <button type="button" onClick={onClose} aria-label="가져오기 닫기" className="rounded-2xl p-2 text-muted transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="close" size={20} /></button>
         </div>
 
         <div className="px-5 py-5 sm:px-7 sm:py-6">
           <div className="mb-6 flex items-center gap-2 text-[11px] font-medium">
             <span className={`flex items-center gap-2 ${stage === "select" ? "text-sky-200" : "text-emerald-200"}`}><span className="flex h-6 w-6 items-center justify-center rounded-full bg-sky-500/15">1</span> 파일 선택</span>
-            <span className="h-px w-8 bg-white/10" />
-            <span className={`flex items-center gap-2 ${stage === "preview" ? "text-sky-200" : "text-slate-500"}`}><span className="flex h-6 w-6 items-center justify-center rounded-full bg-white/[0.07]">2</span> 미리보기 확인</span>
+            <span className="h-px w-8 bg-card-strong" />
+            <span className={`flex items-center gap-2 ${stage === "preview" ? "text-sky-200" : "text-faint"}`}><span className="flex h-6 w-6 items-center justify-center rounded-full bg-card-strong">2</span> 미리보기 확인</span>
           </div>
 
           {stage === "select" && (
             <div>
               <input ref={inputRef} id="workbook-file" type="file" accept=".xlsx" onChange={handleFile} className="sr-only" />
-              <label htmlFor="workbook-file" className="group flex cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-sky-400/30 bg-sky-500/[0.04] px-6 py-10 text-center transition hover:border-sky-300/60 hover:bg-sky-500/[0.08] focus-within:ring-2 focus-within:ring-sky-300">
-                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-200"><Icon name="upload" size={22} /></span>
-                <span className="mt-4 text-sm font-medium text-slate-200">엑셀 파일을 선택하세요</span>
-              <span className="mt-1 text-xs text-slate-500">.xlsx 지원 · 저장 전에 시트와 행을 미리 확인합니다</span>
+              <label htmlFor="workbook-file" className="group flex cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-sky-400/30 bg-sky-500/[0.04] px-6 py-10 text-center transition hover:border-sky-300/60 hover:bg-sky-500/[0.08] focus-within:ring-2 focus-within:ring-sky-300">
+                <span className="flex h-12 w-12 items-center justify-center rounded-3xl bg-sky-500/10 text-sky-200"><Icon name="upload" size={22} /></span>
+                <span className="mt-4 text-sm font-medium text-body">엑셀 파일을 선택하세요</span>
+              <span className="mt-1 text-xs text-faint">.xlsx 지원 · 저장 전에 시트와 행을 미리 확인합니다</span>
               </label>
               {error && <p role="alert" className="mt-3 text-xs text-rose-200">{error}</p>}
-              <p className="mt-4 flex items-start gap-2 rounded-xl bg-white/[0.035] px-3 py-3 text-xs leading-5 text-slate-500"><Icon name="info" size={15} className="mt-0.5 text-slate-400" />개인정보가 포함된 파일은 필요한 범위만 선택하고, 저장 전 인식 결과를 확인하세요.</p>
+              <p className="mt-4 flex items-start gap-2 rounded-2xl bg-card px-3 py-3 text-xs leading-5 text-faint"><Icon name="info" size={15} className="mt-0.5 text-muted" />개인정보가 포함된 파일은 필요한 범위만 선택하고, 저장 전 인식 결과를 확인하세요.</p>
             </div>
           )}
 
           {stage === "preview" && preview && (
             <div>
-              <div className="flex items-center gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.035] px-4 py-3">
-                <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/10 text-emerald-200"><Icon name="file" size={17} /></span>
-                <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-slate-200">{preview.fileName}</p><p className="mt-0.5 text-[11px] text-slate-500">파일 선택 완료 · 로컬 미리보기</p></div>
+              <div className="flex items-center gap-3 rounded-3xl border border-line bg-card px-4 py-3">
+                <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-200"><Icon name="file" size={17} /></span>
+                <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-body">{preview.fileName}</p><p className="mt-0.5 text-[11px] text-faint">파일 선택 완료 · 로컬 미리보기</p></div>
                 <button type="button" onClick={backToSelect} className="text-xs text-sky-200 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">변경</button>
               </div>
               <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {[["인식 행", `${preview.records.length}건`], ["인식 시트", `${preview.sheetNames.length}개`], ["건너뛸 행", `${preview.counts.skippedRows}건`], ["중복 의심", `${preview.counts.duplicates}건`]].map(([label, value]) => <div key={label} className="rounded-2xl border border-white/[0.07] bg-white/[0.025] px-3 py-3"><p className="text-[11px] text-slate-500">{label}</p><p className="mt-1 text-base font-semibold text-slate-100">{value}</p></div>)}
+                {[["인식 행", `${preview.records.length}건`], ["인식 시트", `${preview.sheetNames.length}개`], ["건너뛸 행", `${preview.counts.skippedRows}건`], ["중복 의심", `${preview.counts.duplicates}건`]].map(([label, value]) => <div key={label} className="rounded-3xl border border-line bg-card-soft px-3 py-3"><p className="text-[11px] text-faint">{label}</p><p className="mt-1 text-base font-semibold text-ink">{value}</p></div>)}
               </div>
-              <div className="mt-4 rounded-2xl border border-white/[0.07] px-4 py-4">
-                <p className="text-xs font-medium text-slate-300">인식된 시트</p>
-                <div className="mt-2 flex flex-wrap gap-2">{preview.sheetNames.map((sheet) => <span key={sheet} className="rounded-lg bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-200">{sheet}</span>)}</div>
-                <p className="mt-3 text-xs leading-5 text-slate-500">지원되는 시트의 데이터만 저장 대상으로 포함하고, 형식이 맞지 않는 행은 건너뜁니다.</p>
+              <div className="mt-4 rounded-3xl border border-line px-4 py-4">
+                <p className="text-xs font-medium text-body">인식된 시트</p>
+                <div className="mt-2 flex flex-wrap gap-2">{preview.sheetNames.map((sheet) => <span key={sheet} className="rounded-xl bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-200">{sheet}</span>)}</div>
+                <p className="mt-3 text-xs leading-5 text-faint">지원되는 시트의 데이터만 저장 대상으로 포함하고, 형식이 맞지 않는 행은 건너뜁니다.</p>
                 {!!preview.warnings.length && <p className="mt-2 text-xs text-amber-200">주의 {preview.warnings.length}건 · 일부 행을 확인해주세요.</p>}
               </div>
-              <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-2xl border border-amber-400/20 bg-amber-500/[0.06] px-4 py-3.5">
-                <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-white/20 bg-slate-900 accent-emerald-400" />
+              <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-3xl border border-amber-400/20 bg-amber-500/[0.06] px-4 py-3.5">
+                <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-line-strong bg-surface accent-emerald-400" />
                 <span className="text-xs leading-5 text-amber-100/80">미리보기 결과를 확인했으며, 인식된 내역을 저장하겠습니다. 중복·건너뛸 행은 저장 대상에서 제외됩니다.</span>
               </label>
               <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <button type="button" onClick={onClose} className="h-11 rounded-xl px-5 text-sm font-medium text-slate-400 transition hover:bg-white/[0.06] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">취소</button>
-                <button type="button" disabled={!confirmed} onClick={() => onImport((inputRef.current?.files?.[0]) as File, preview)} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"><Icon name="upload" size={16} /> 확인 후 저장</button>
+                <button type="button" onClick={onClose} className="h-11 rounded-2xl px-5 text-sm font-medium text-muted transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">취소</button>
+                <button type="button" disabled={!confirmed} onClick={() => onImport((inputRef.current?.files?.[0]) as File, preview)} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"><Icon name="upload" size={16} /> 확인 후 저장</button>
               </div>
             </div>
           )}
@@ -1128,7 +1129,7 @@ function formatRelativeDue(dateValue: string) {
 function MiniBar({ value, max, tone = "emerald" }: { value: number; max: number; tone?: string }) {
   const width = max > 0 ? Math.max(4, Math.min(100, (value / max) * 100)) : 4;
   return (
-    <div className="h-2 flex-1 overflow-hidden rounded-full bg-white/[0.07]">
+    <div className="h-2 flex-1 overflow-hidden rounded-full bg-card-strong">
       <div className={`h-full rounded-full ${toneClasses(tone)}`} style={{ width: `${width}%` }} />
     </div>
   );
@@ -1180,40 +1181,40 @@ function OverviewPanel({
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.3fr)_minmax(340px,0.7fr)]">
-        <section className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-5 sm:p-6">
-          <SectionHeading eyebrow="Monthly flow" title="이번 달 흐름" action={<button type="button" onClick={() => onNavigate("transactions")} className="inline-flex items-center gap-1 text-xs font-medium text-slate-400 transition hover:text-emerald-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">상세 보기 <Icon name="chevron-right" size={14} /></button>} />
+        <section className="rounded-3xl border border-line bg-card p-5 sm:p-6">
+          <SectionHeading eyebrow="Monthly flow" title="이번 달 흐름" action={<button type="button" onClick={() => onNavigate("transactions")} className="inline-flex items-center gap-1 text-xs font-medium text-muted transition hover:text-emerald-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">상세 보기 <Icon name="chevron-right" size={14} /></button>} />
           <div className="mt-6 grid gap-6 md:grid-cols-[1fr_0.9fr] md:items-center">
             <div>
               <div className="flex items-end justify-between gap-4">
-                <div><p className="text-xs text-slate-500">순현금 흐름</p><p className={`mt-1 text-3xl font-semibold tracking-tight ${income - expense >= 0 ? "text-emerald-200" : "text-rose-200"}`}>{income - expense >= 0 ? "+" : "−"}{currency(Math.abs(income - expense))}</p></div>
-                <span className="rounded-full bg-white/[0.06] px-2.5 py-1 text-[11px] text-slate-400">{monthText(month)}</span>
+                <div><p className="text-xs text-faint">순현금 흐름</p><p className={`mt-1 text-3xl font-semibold tracking-tight ${income - expense >= 0 ? "text-emerald-200" : "text-rose-200"}`}>{income - expense >= 0 ? "+" : "−"}{currency(Math.abs(income - expense))}</p></div>
+                <span className="rounded-full bg-card-strong px-2.5 py-1 text-[11px] text-muted">{monthText(month)}</span>
               </div>
               <div className="mt-7 space-y-4">
-                <div><div className="mb-2 flex items-center justify-between text-xs"><span className="flex items-center gap-2 text-slate-400"><i className="h-2 w-2 rounded-full bg-emerald-300" />수입</span><span className="font-medium tabular-nums text-slate-200">{currency(income)}</span></div><div className="h-2 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full bg-emerald-400" style={{ width: `${income ? Math.min(100, (income / Math.max(income, expense)) * 100) : 0}%` }} /></div></div>
-                <div><div className="mb-2 flex items-center justify-between text-xs"><span className="flex items-center gap-2 text-slate-400"><i className="h-2 w-2 rounded-full bg-rose-300" />지출</span><span className="font-medium tabular-nums text-slate-200">{currency(expense)}</span></div><div className="h-2 overflow-hidden rounded-full bg-white/[0.06]"><div className="h-full rounded-full bg-rose-400" style={{ width: `${expense ? Math.min(100, (expense / Math.max(income, expense)) * 100) : 0}%` }} /></div></div>
+                <div><div className="mb-2 flex items-center justify-between text-xs"><span className="flex items-center gap-2 text-muted"><i className="h-2 w-2 rounded-full bg-emerald-300" />수입</span><span className="font-medium tabular-nums text-body">{currency(income)}</span></div><div className="h-2 overflow-hidden rounded-full bg-card-strong"><div className="h-full rounded-full bg-emerald-400" style={{ width: `${income ? Math.min(100, (income / Math.max(income, expense)) * 100) : 0}%` }} /></div></div>
+                <div><div className="mb-2 flex items-center justify-between text-xs"><span className="flex items-center gap-2 text-muted"><i className="h-2 w-2 rounded-full bg-rose-300" />지출</span><span className="font-medium tabular-nums text-body">{currency(expense)}</span></div><div className="h-2 overflow-hidden rounded-full bg-card-strong"><div className="h-full rounded-full bg-rose-400" style={{ width: `${expense ? Math.min(100, (expense / Math.max(income, expense)) * 100) : 0}%` }} /></div></div>
               </div>
             </div>
-            <div className="rounded-2xl border border-white/[0.07] bg-slate-950/35 p-4"><div className="flex items-center justify-between"><p className="text-xs font-medium text-slate-300">지출 카테고리</p><Icon name="pie-chart" size={16} className="text-slate-500" /></div>{categories.length ? <div className="mt-4 space-y-3">{categories.map(([category, value], index) => <div key={category}><div className="mb-1.5 flex justify-between text-[11px]"><span className="text-slate-400">{category}</span><span className="tabular-nums text-slate-300">{currency(value)}</span></div><MiniBar value={value} max={maxCategory} tone={["rose", "amber", "sky", "violet"][index] || "rose"} /></div>)}</div> : <p className="mt-5 text-xs leading-5 text-slate-500">아직 지출 기록이 없습니다.<br />첫 기록을 추가해보세요.</p>}</div>
+            <div className="rounded-3xl border border-line bg-card-soft p-4"><div className="flex items-center justify-between"><p className="text-xs font-medium text-body">지출 카테고리</p><Icon name="pie-chart" size={16} className="text-faint" /></div>{categories.length ? <div className="mt-4 space-y-3">{categories.map(([category, value], index) => <div key={category}><div className="mb-1.5 flex justify-between text-[11px]"><span className="text-muted">{category}</span><span className="tabular-nums text-body">{currency(value)}</span></div><MiniBar value={value} max={maxCategory} tone={["rose", "amber", "sky", "violet"][index] || "rose"} /></div>)}</div> : <p className="mt-5 text-xs leading-5 text-faint">아직 지출 기록이 없습니다.<br />첫 기록을 추가해보세요.</p>}</div>
           </div>
         </section>
 
-        <section className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-5 sm:p-6">
+        <section className="rounded-3xl border border-line bg-card p-5 sm:p-6">
           <SectionHeading eyebrow="Quick start" title="빠른 기록" />
           <div className="mt-5 grid grid-cols-2 gap-2">
-            {(["expense", "salary", "side-income", "savings"] as EntryKind[]).map((kind) => <button key={kind} type="button" onClick={() => onAdd(kind)} className="group flex items-center gap-3 rounded-2xl border border-white/[0.08] bg-white/[0.025] px-3 py-3 text-left transition hover:border-white/[0.18] hover:bg-white/[0.07] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"><span className={`flex h-8 w-8 items-center justify-center rounded-xl ${toneClasses(entryTones[kind], true)}`}><Icon name={entryIcons[kind]} size={16} /></span><span className="min-w-0"><span className="block truncate text-xs font-medium text-slate-200">{entryLabels[kind]}</span><span className="mt-0.5 block text-[10px] text-slate-500">바로 입력</span></span></button>)}
+            {(["expense", "salary", "side-income", "savings"] as EntryKind[]).map((kind) => <button key={kind} type="button" onClick={() => onAdd(kind)} className="group flex items-center gap-3 rounded-3xl border border-line bg-card-soft px-3 py-3 text-left transition hover:border-line-strong hover:bg-card-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"><span className={`flex h-8 w-8 items-center justify-center rounded-2xl ${toneClasses(entryTones[kind], true)}`}><Icon name={entryIcons[kind]} size={16} /></span><span className="min-w-0"><span className="block truncate text-xs font-medium text-body">{entryLabels[kind]}</span><span className="mt-0.5 block text-[10px] text-faint">바로 입력</span></span></button>)}
           </div>
-          <div className="mt-5 border-t border-white/[0.07] pt-5"><button type="button" onClick={onOpenImport} className="flex w-full items-center gap-3 rounded-2xl border border-sky-400/20 bg-sky-500/[0.05] px-4 py-3 text-left transition hover:bg-sky-500/[0.1] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><span className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-500/10 text-sky-200"><Icon name="upload" size={16} /></span><span><span className="block text-xs font-medium text-sky-100">엑셀에서 가져오기</span><span className="mt-0.5 block text-[10px] text-slate-500">기존 기록을 한 번에 추가</span></span><Icon name="chevron-right" size={15} className="ml-auto text-sky-300/60" /></button></div>
+          <div className="mt-5 border-t border-line pt-5"><button type="button" onClick={onOpenImport} className="flex w-full items-center gap-3 rounded-3xl border border-sky-400/20 bg-sky-500/[0.05] px-4 py-3 text-left transition hover:bg-sky-500/[0.1] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><span className="flex h-8 w-8 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-200"><Icon name="upload" size={16} /></span><span><span className="block text-xs font-medium text-sky-100">엑셀에서 가져오기</span><span className="mt-0.5 block text-[10px] text-faint">기존 기록을 한 번에 추가</span></span><Icon name="chevron-right" size={15} className="ml-auto text-sky-300/60" /></button></div>
         </section>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <section className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-5 sm:p-6">
-          <SectionHeading eyebrow="Maturity watch" title="다가오는 만기" action={<button type="button" onClick={() => onNavigate("assets")} className="inline-flex items-center gap-1 text-xs font-medium text-slate-400 transition hover:text-sky-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">자산 보기 <Icon name="chevron-right" size={14} /></button>} />
-          <div className="mt-4 space-y-2">{maturities.length ? maturities.map((record) => <button type="button" key={record.id} onClick={() => onOpenDetail(record)} className="flex w-full items-center gap-3 rounded-2xl border border-white/[0.07] bg-white/[0.02] px-3.5 py-3 text-left transition hover:border-amber-300/30 hover:bg-amber-500/[0.05] focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-amber-500/10 text-amber-200"><Icon name="calendar" size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-200">{record.title}</span><span className="mt-0.5 block text-[11px] text-slate-500">{dateText(record.maturityDate)} · {formatRelativeDue(record.maturityDate || record.date)}</span></span><span className="text-sm font-medium tabular-nums text-slate-200">{compactCurrency(record.amount)}</span></button>) : <EmptyState icon="calendar" title="예정된 만기가 없습니다" description="예금·적금 기록에 만기일을 입력하면 이곳에서 알려드려요." action={<button type="button" onClick={() => onAdd("savings")} className="rounded-xl bg-sky-400 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200">자산 기록하기</button>} />}</div>
+        <section className="rounded-3xl border border-line bg-card p-5 sm:p-6">
+          <SectionHeading eyebrow="Maturity watch" title="다가오는 만기" action={<button type="button" onClick={() => onNavigate("assets")} className="inline-flex items-center gap-1 text-xs font-medium text-muted transition hover:text-sky-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">자산 보기 <Icon name="chevron-right" size={14} /></button>} />
+          <div className="mt-4 space-y-2">{maturities.length ? maturities.map((record) => <button type="button" key={record.id} onClick={() => onOpenDetail(record)} className="flex w-full items-center gap-3 rounded-3xl border border-line bg-card-soft px-3.5 py-3 text-left transition hover:border-amber-300/30 hover:bg-amber-500/[0.05] focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"><span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-200"><Icon name="calendar" size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-body">{record.title}</span><span className="mt-0.5 block text-[11px] text-faint">{dateText(record.maturityDate)} · {formatRelativeDue(record.maturityDate || record.date)}</span></span><span className="text-sm font-medium tabular-nums text-body">{compactCurrency(record.amount)}</span></button>) : <EmptyState icon="calendar" title="예정된 만기가 없습니다" description="예금·적금 기록에 만기일을 입력하면 이곳에서 알려드려요." action={<button type="button" onClick={() => onAdd("savings")} className="rounded-2xl bg-sky-400 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200">자산 기록하기</button>} />}</div>
         </section>
-        <section className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-5 sm:p-6">
-          <SectionHeading eyebrow="To do" title="진행 중인 작업" action={<button type="button" onClick={() => onNavigate("tasks")} className="inline-flex items-center gap-1 text-xs font-medium text-slate-400 transition hover:text-emerald-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">작업 관리 <Icon name="chevron-right" size={14} /></button>} />
-          <div className="mt-4 space-y-2">{ongoing.length ? ongoing.map((task) => <button type="button" key={task.id} onClick={() => onNavigate("tasks")} className="flex w-full items-center gap-3 rounded-2xl border border-white/[0.07] bg-white/[0.02] px-3.5 py-3 text-left transition hover:border-emerald-300/30 hover:bg-emerald-500/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"><span className={`flex h-9 w-9 items-center justify-center rounded-xl ${task.status === "in-progress" ? "bg-sky-500/10 text-sky-200" : "bg-amber-500/10 text-amber-200"}`}><Icon name={task.status === "in-progress" ? "refresh" : "calendar"} size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-200">{task.title}</span><span className="mt-0.5 block truncate text-[11px] text-slate-500">{task.description}</span></span><StatusBadge status={task.status} /></button>) : <EmptyState icon="check" title="진행 중인 작업이 없습니다" description="새로운 작업을 추가하면 이곳에서 관리할 수 있어요." />}</div>
+        <section className="rounded-3xl border border-line bg-card p-5 sm:p-6">
+          <SectionHeading eyebrow="To do" title="진행 중인 작업" action={<button type="button" onClick={() => onNavigate("tasks")} className="inline-flex items-center gap-1 text-xs font-medium text-muted transition hover:text-emerald-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">작업 관리 <Icon name="chevron-right" size={14} /></button>} />
+          <div className="mt-4 space-y-2">{ongoing.length ? ongoing.map((task) => <button type="button" key={task.id} onClick={() => onNavigate("tasks")} className="flex w-full items-center gap-3 rounded-3xl border border-line bg-card-soft px-3.5 py-3 text-left transition hover:border-emerald-300/30 hover:bg-emerald-500/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"><span className={`flex h-9 w-9 items-center justify-center rounded-2xl ${task.status === "in-progress" ? "bg-sky-500/10 text-sky-200" : "bg-amber-500/10 text-amber-200"}`}><Icon name={task.status === "in-progress" ? "refresh" : "calendar"} size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-body">{task.title}</span><span className="mt-0.5 block truncate text-[11px] text-faint">{task.description}</span></span><StatusBadge status={task.status} /></button>) : <EmptyState icon="check" title="진행 중인 작업이 없습니다" description="새로운 작업을 추가하면 이곳에서 관리할 수 있어요." />}</div>
         </section>
       </div>
     </div>
@@ -1258,34 +1259,34 @@ function TransactionsPanel({
   return (
     <div className="space-y-5">
       <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.05] p-4"><p className="text-xs text-emerald-200/70">조회 기간 수입</p><p className="mt-2 text-xl font-semibold tabular-nums text-emerald-100">{currency(income)}</p></div>
-        <div className="rounded-2xl border border-rose-400/15 bg-rose-500/[0.05] p-4"><p className="text-xs text-rose-200/70">조회 기간 지출</p><p className="mt-2 text-xl font-semibold tabular-nums text-rose-100">{currency(expense)}</p></div>
-        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-4"><p className="text-xs text-slate-500">순현금 흐름</p><p className={`mt-2 text-xl font-semibold tabular-nums ${income >= expense ? "text-sky-100" : "text-rose-100"}`}>{income >= expense ? "+" : "−"}{currency(Math.abs(income - expense))}</p></div>
+        <div className="rounded-3xl border border-emerald-400/15 bg-emerald-500/[0.05] p-4"><p className="text-xs text-emerald-200/70">조회 기간 수입</p><p className="mt-2 text-xl font-semibold tabular-nums text-emerald-100">{currency(income)}</p></div>
+        <div className="rounded-3xl border border-rose-400/15 bg-rose-500/[0.05] p-4"><p className="text-xs text-rose-200/70">조회 기간 지출</p><p className="mt-2 text-xl font-semibold tabular-nums text-rose-100">{currency(expense)}</p></div>
+        <div className="rounded-3xl border border-line bg-card p-4"><p className="text-xs text-faint">순현금 흐름</p><p className={`mt-2 text-xl font-semibold tabular-nums ${income >= expense ? "text-sky-100" : "text-rose-100"}`}>{income >= expense ? "+" : "−"}{currency(Math.abs(income - expense))}</p></div>
       </div>
-      <section className="rounded-2xl border border-white/[0.08] bg-white/[0.035]">
-        <div className="flex flex-col gap-4 border-b border-white/[0.08] p-4 sm:p-5">
+      <section className="rounded-3xl border border-line bg-card">
+        <div className="flex flex-col gap-4 border-b border-line p-4 sm:p-5">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-center gap-1 rounded-xl bg-white/[0.06] p-1" role="group" aria-label="조회 범위">
-              <button type="button" onClick={() => setRange("month")} aria-pressed={range === "month"} className={`rounded-lg px-3 py-2 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 ${range === "month" ? "bg-white/[0.13] text-white" : "text-slate-500 hover:text-slate-200"}`}>월별</button>
-              <button type="button" onClick={() => setRange("year")} aria-pressed={range === "year"} className={`rounded-lg px-3 py-2 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 ${range === "year" ? "bg-white/[0.13] text-white" : "text-slate-500 hover:text-slate-200"}`}>연간</button>
+            <div className="flex items-center gap-1 rounded-2xl bg-card-strong p-1" role="group" aria-label="조회 범위">
+              <button type="button" onClick={() => setRange("month")} aria-pressed={range === "month"} className={`rounded-xl px-3 py-2 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 ${range === "month" ? "bg-emerald-400/20 text-ink shadow-sm text-ink" : "text-faint hover:text-ink"}`}>월별</button>
+              <button type="button" onClick={() => setRange("year")} aria-pressed={range === "year"} className={`rounded-xl px-3 py-2 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 ${range === "year" ? "bg-emerald-400/20 text-ink shadow-sm text-ink" : "text-faint hover:text-ink"}`}>연간</button>
             </div>
             <div className="flex flex-wrap gap-2">
-              {range === "month" ? <input aria-label="조회 월" type="month" value={month} onChange={(event) => setMonth(event.target.value)} className="h-9 rounded-lg border border-white/[0.1] bg-slate-950/60 px-3 text-xs text-slate-200 outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15" /> : <select aria-label="조회 연도" value={year} onChange={(event) => setYear(event.target.value)} className="h-9 rounded-lg border border-white/[0.1] bg-slate-950/60 px-3 text-xs text-slate-200 outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15"><option>{year}</option><option>{String(Number(year) - 1)}</option><option>{String(Number(year) + 1)}</option></select>}
-              <button type="button" onClick={onOpenImport} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-sky-400/20 px-3 text-xs font-medium text-sky-200 transition hover:bg-sky-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="upload" size={14} /> 가져오기</button>
-              <button type="button" onClick={() => onAdd("expense")} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-400 px-3 text-xs font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"><Icon name="plus" size={14} /> 내역 추가</button>
+              {range === "month" ? <input aria-label="조회 월" type="month" value={month} onChange={(event) => setMonth(event.target.value)} className="h-9 rounded-xl border border-line bg-field px-3 text-xs text-body outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15" /> : <select aria-label="조회 연도" value={year} onChange={(event) => setYear(event.target.value)} className="h-9 rounded-xl border border-line bg-field px-3 text-xs text-body outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15"><option>{year}</option><option>{String(Number(year) - 1)}</option><option>{String(Number(year) + 1)}</option></select>}
+              <button type="button" onClick={onOpenImport} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-sky-400/20 px-3 text-xs font-medium text-sky-200 transition hover:bg-sky-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="upload" size={14} /> 가져오기</button>
+              <button type="button" onClick={() => onAdd("expense")} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-400 px-3 text-xs font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"><Icon name="plus" size={14} /> 내역 추가</button>
             </div>
           </div>
           <div className="flex flex-col gap-2 md:flex-row md:items-center">
-            <label className="relative flex-1"><span className="sr-only">내역 검색</span><Icon name="search" size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="내역, 카테고리, 출처 검색" className="h-10 w-full rounded-xl border border-white/[0.1] bg-slate-950/50 pl-9 pr-3 text-xs text-slate-200 outline-none placeholder:text-slate-600 focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15" /></label>
+            <label className="relative flex-1"><span className="sr-only">내역 검색</span><Icon name="search" size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="내역, 카테고리, 출처 검색" className="h-10 w-full rounded-2xl border border-line bg-field pl-9 pr-3 text-xs text-body outline-none placeholder:text-faint focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15" /></label>
             <div className="flex gap-2"><SelectField compact id="transaction-kind" label="유형" value={kind === "all" ? "전체 유형" : entryLabels[kind]} onChange={(value) => setKind(value === "전체 유형" ? "all" : (Object.keys(entryLabels) as EntryKind[]).find((entryKind) => entryLabels[entryKind] === value) || "all")} options={["전체 유형", ...transactionKinds.map((entryKind) => entryLabels[entryKind])]} /><SelectField compact id="transaction-source" label="출처" value={source} onChange={setSource} options={sourceOptions} /></div>
           </div>
         </div>
         <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[680px] text-left text-sm"><caption className="sr-only">수입·지출 내역</caption><thead className="border-b border-white/[0.07] text-[11px] text-slate-500"><tr><th scope="col" className="px-5 py-3 font-medium">날짜</th><th scope="col" className="px-3 py-3 font-medium">유형</th><th scope="col" className="px-3 py-3 font-medium">내역</th><th scope="col" className="px-3 py-3 font-medium">출처·수단</th><th scope="col" className="px-3 py-3 text-right font-medium">금액</th><th scope="col" className="px-5 py-3 text-right font-medium">상세</th></tr></thead><tbody className="divide-y divide-white/[0.05]">{visible.map((record) => <tr key={record.id} className="group transition hover:bg-white/[0.025]"><td className="whitespace-nowrap px-5 py-4 text-xs tabular-nums text-slate-500">{dateText(record.date)}</td><td className="px-3 py-4"><KindBadge kind={record.kind} /></td><td className="px-3 py-4"><p className="font-medium text-slate-200">{record.title}</p>{record.category && <p className="mt-1 text-xs text-slate-500">{record.category}</p>}</td><td className="px-3 py-4 text-xs text-slate-400">{record.source || record.account || "—"}</td><td className={`whitespace-nowrap px-3 py-4 text-right font-semibold tabular-nums ${record.kind === "expense" ? "text-rose-200" : "text-emerald-200"}`}>{record.kind === "expense" ? "−" : "+"}{currency(record.amount)}</td><td className="px-5 py-4 text-right"><button type="button" onClick={() => onOpenDetail(record)} className="rounded-lg p-2 text-slate-500 opacity-70 transition hover:bg-white/[0.08] hover:text-white focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300" aria-label={`${record.title} 상세 보기`}><Icon name="more" size={17} /></button></td></tr>)}</tbody></table>
+          <table className="w-full min-w-[680px] text-left text-sm"><caption className="sr-only">수입·지출 내역</caption><thead className="border-b border-line text-[11px] text-faint"><tr><th scope="col" className="px-5 py-3 font-medium">날짜</th><th scope="col" className="px-3 py-3 font-medium">유형</th><th scope="col" className="px-3 py-3 font-medium">내역</th><th scope="col" className="px-3 py-3 font-medium">출처·수단</th><th scope="col" className="px-3 py-3 text-right font-medium">금액</th><th scope="col" className="px-5 py-3 text-right font-medium">상세</th></tr></thead><tbody className="divide-y divide-line">{visible.map((record) => <tr key={record.id} className="group transition hover:bg-card-soft"><td className="whitespace-nowrap px-5 py-4 text-xs tabular-nums text-faint">{dateText(record.date)}</td><td className="px-3 py-4"><KindBadge kind={record.kind} /></td><td className="px-3 py-4"><p className="font-medium text-body">{record.title}</p>{record.category && <p className="mt-1 text-xs text-faint">{record.category}</p>}</td><td className="px-3 py-4 text-xs text-muted">{record.source || record.account || "—"}</td><td className={`whitespace-nowrap px-3 py-4 text-right font-semibold tabular-nums ${record.kind === "expense" ? "text-rose-200" : "text-emerald-200"}`}>{record.kind === "expense" ? "−" : "+"}{currency(record.amount)}</td><td className="px-5 py-4 text-right"><button type="button" onClick={() => onOpenDetail(record)} className="rounded-xl p-2 text-faint opacity-70 transition hover:bg-card-strong hover:text-ink focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300" aria-label={`${record.title} 상세 보기`}><Icon name="more" size={17} /></button></td></tr>)}</tbody></table>
         </div>
-        <div className="divide-y divide-white/[0.06] md:hidden">{visible.map((record) => <button type="button" key={record.id} onClick={() => onOpenDetail(record)} className="flex w-full items-start gap-3 px-4 py-4 text-left transition hover:bg-white/[0.035] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-300"><span className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-xl ${toneClasses(entryTones[record.kind], true)}`}><Icon name={entryIcons[record.kind]} size={16} /></span><span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-3"><span className="truncate text-sm font-medium text-slate-200">{record.title}</span><span className={`shrink-0 text-sm font-semibold tabular-nums ${record.kind === "expense" ? "text-rose-200" : "text-emerald-200"}`}>{record.kind === "expense" ? "−" : "+"}{currency(record.amount)}</span></span><span className="mt-1 block text-[11px] text-slate-500">{dateText(record.date)} · {entryLabels[record.kind]}{record.category ? ` · ${record.category}` : ""}</span></span></button>)}</div>
-        {!visible.length && <div className="p-4 sm:p-5"><EmptyState icon="search" title="조건에 맞는 내역이 없습니다" description="조회 기간이나 필터를 바꾸거나, 새 내역을 추가해보세요." action={<button type="button" onClick={() => onAdd("expense")} className="rounded-xl bg-emerald-400 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200">내역 추가</button>} /></div>}
-        <div className="border-t border-white/[0.07] px-4 py-3 text-[11px] text-slate-500 sm:px-5">총 {visible.length}건 · 금액은 원화 기준으로 표시됩니다.</div>
+        <div className="divide-y divide-line md:hidden">{visible.map((record) => <button type="button" key={record.id} onClick={() => onOpenDetail(record)} className="flex w-full items-start gap-3 px-4 py-4 text-left transition hover:bg-card focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-300"><span className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-2xl ${toneClasses(entryTones[record.kind], true)}`}><Icon name={entryIcons[record.kind]} size={16} /></span><span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-3"><span className="truncate text-sm font-medium text-body">{record.title}</span><span className={`shrink-0 text-sm font-semibold tabular-nums ${record.kind === "expense" ? "text-rose-200" : "text-emerald-200"}`}>{record.kind === "expense" ? "−" : "+"}{currency(record.amount)}</span></span><span className="mt-1 block text-[11px] text-faint">{dateText(record.date)} · {entryLabels[record.kind]}{record.category ? ` · ${record.category}` : ""}</span></span></button>)}</div>
+        {!visible.length && <div className="p-4 sm:p-5"><EmptyState icon="search" title="조건에 맞는 내역이 없습니다" description="조회 기간이나 필터를 바꾸거나, 새 내역을 추가해보세요." action={<button type="button" onClick={() => onAdd("expense")} className="rounded-2xl bg-emerald-400 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200">내역 추가</button>} /></div>}
+        <div className="border-t border-line px-4 py-3 text-[11px] text-faint sm:px-5">총 {visible.length}건 · 금액은 원화 기준으로 표시됩니다.</div>
       </section>
     </div>
   );
@@ -1319,13 +1320,13 @@ function AssetsPanel({
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-2xl border border-sky-400/15 bg-sky-500/[0.05] p-4"><p className="text-xs text-sky-200/70">기록된 자산</p><p className="mt-2 text-xl font-semibold tabular-nums text-sky-100">{currency(savings + stocks)}</p></div><div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.05] p-4"><p className="text-xs text-emerald-200/70">예금·적금</p><p className="mt-2 text-xl font-semibold tabular-nums text-emerald-100">{currency(savings)}</p></div><div className="rounded-2xl border border-violet-400/15 bg-violet-500/[0.05] p-4"><p className="text-xs text-violet-200/70">주식 주문 누적</p><p className="mt-2 text-xl font-semibold tabular-nums text-violet-100">{currency(stocks)}</p></div></div>
-      <section className="rounded-2xl border border-white/[0.08] bg-white/[0.035]">
-        <div className="flex flex-col gap-4 border-b border-white/[0.08] p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Portfolio</p><h2 className="mt-1 text-lg font-semibold text-slate-100">자산 목록</h2></div><div className="flex flex-wrap gap-2"><select aria-label="자산 연도" value={year} onChange={(event) => setYear(event.target.value)} className="h-9 rounded-lg border border-white/[0.1] bg-slate-950/60 px-3 text-xs text-slate-200 outline-none focus:border-sky-400/60 focus:ring-2 focus:ring-sky-400/15"><option>{year}</option><option>{String(Number(year) - 1)}</option><option>{String(Number(year) + 1)}</option></select><button type="button" onClick={() => onAdd("savings")} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-sky-400 px-3 text-xs font-semibold text-slate-950 transition hover:bg-sky-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"><Icon name="plus" size={14} /> 자산 추가</button></div></div><div className="flex flex-wrap items-center gap-2"><SelectField compact="sm" id="asset-institution" label="기관" value={institution} onChange={setInstitution} options={institutionOptions} /><SelectField compact="sm" id="asset-status" label="상태" value={status === "전체 상태" ? "전체 상태" : assetStatusLabels[status as AssetStatus]} onChange={(value) => setStatus(value === "전체 상태" ? "전체 상태" : (Object.keys(assetStatusLabels) as AssetStatus[]).find((assetStatus) => assetStatusLabels[assetStatus] === value) || "전체 상태")} options={["전체 상태", ...Object.values(assetStatusLabels)]} /></div></div>
-        <div className="divide-y divide-white/[0.06]">{visible.map((record) => <button type="button" key={record.id} onClick={() => onOpenDetail(record)} className="flex w-full items-center gap-3 px-4 py-4 text-left transition hover:bg-white/[0.025] focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 sm:px-5"><span className={`flex h-10 w-10 items-center justify-center rounded-2xl ${toneClasses(entryTones[record.kind], true)}`}><Icon name={entryIcons[record.kind]} size={17} /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-slate-200">{record.title}</span><span className="mt-1 block truncate text-xs text-slate-500">{record.institution || "기관 미입력"} · {record.account || record.ticker || entryLabels[record.kind]}</span></span><span className="hidden sm:block"><StatusBadge status={record.status || "active"} /></span><span className="text-right"><span className="block text-sm font-semibold tabular-nums text-slate-100">{currency(record.amount)}</span><span className="mt-1 block text-[11px] text-slate-500">{record.maturityDate ? `만기 ${dateText(record.maturityDate)}` : dateText(record.date)}</span></span></button>)}{!visible.length && <div className="p-4 sm:p-5"><EmptyState icon="pie-chart" title="조건에 맞는 자산이 없습니다" description="자산 기록을 추가하거나 필터를 조정해보세요." action={<button type="button" onClick={() => onAdd("savings")} className="rounded-xl bg-sky-400 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200">자산 추가</button>} /></div>}</div>
-        <div className="border-t border-white/[0.07] px-4 py-3 text-[11px] text-slate-500 sm:px-5">총 {visible.length}개 · 상세를 누르면 수정·삭제할 수 있습니다.</div>
+      <div className="grid gap-3 sm:grid-cols-3"><div className="rounded-3xl border border-sky-400/15 bg-sky-500/[0.05] p-4"><p className="text-xs text-sky-200/70">기록된 자산</p><p className="mt-2 text-xl font-semibold tabular-nums text-sky-100">{currency(savings + stocks)}</p></div><div className="rounded-3xl border border-emerald-400/15 bg-emerald-500/[0.05] p-4"><p className="text-xs text-emerald-200/70">예금·적금</p><p className="mt-2 text-xl font-semibold tabular-nums text-emerald-100">{currency(savings)}</p></div><div className="rounded-3xl border border-violet-400/15 bg-violet-500/[0.05] p-4"><p className="text-xs text-violet-200/70">주식 주문 누적</p><p className="mt-2 text-xl font-semibold tabular-nums text-violet-100">{currency(stocks)}</p></div></div>
+      <section className="rounded-3xl border border-line bg-card">
+        <div className="flex flex-col gap-4 border-b border-line p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-faint">Portfolio</p><h2 className="mt-1 text-lg font-semibold text-ink">자산 목록</h2></div><div className="flex flex-wrap gap-2"><select aria-label="자산 연도" value={year} onChange={(event) => setYear(event.target.value)} className="h-9 rounded-xl border border-line bg-field px-3 text-xs text-body outline-none focus:border-sky-400/60 focus:ring-2 focus:ring-sky-400/15"><option>{year}</option><option>{String(Number(year) - 1)}</option><option>{String(Number(year) + 1)}</option></select><button type="button" onClick={() => onAdd("savings")} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-sky-400 px-3 text-xs font-semibold text-slate-950 transition hover:bg-sky-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"><Icon name="plus" size={14} /> 자산 추가</button></div></div><div className="flex flex-wrap items-center gap-2"><SelectField compact="sm" id="asset-institution" label="기관" value={institution} onChange={setInstitution} options={institutionOptions} /><SelectField compact="sm" id="asset-status" label="상태" value={status === "전체 상태" ? "전체 상태" : assetStatusLabels[status as AssetStatus]} onChange={(value) => setStatus(value === "전체 상태" ? "전체 상태" : (Object.keys(assetStatusLabels) as AssetStatus[]).find((assetStatus) => assetStatusLabels[assetStatus] === value) || "전체 상태")} options={["전체 상태", ...Object.values(assetStatusLabels)]} /></div></div>
+        <div className="divide-y divide-line">{visible.map((record) => <button type="button" key={record.id} onClick={() => onOpenDetail(record)} className="flex w-full items-center gap-3 px-4 py-4 text-left transition hover:bg-card-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 sm:px-5"><span className={`flex h-10 w-10 items-center justify-center rounded-3xl ${toneClasses(entryTones[record.kind], true)}`}><Icon name={entryIcons[record.kind]} size={17} /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-body">{record.title}</span><span className="mt-1 block truncate text-xs text-faint">{record.institution || "기관 미입력"} · {record.account || record.ticker || entryLabels[record.kind]}</span></span><span className="hidden sm:block"><StatusBadge status={record.status || "active"} /></span><span className="text-right"><span className="block text-sm font-semibold tabular-nums text-ink">{currency(record.amount)}</span><span className="mt-1 block text-[11px] text-faint">{record.maturityDate ? `만기 ${dateText(record.maturityDate)}` : dateText(record.date)}</span></span></button>)}{!visible.length && <div className="p-4 sm:p-5"><EmptyState icon="pie-chart" title="조건에 맞는 자산이 없습니다" description="자산 기록을 추가하거나 필터를 조정해보세요." action={<button type="button" onClick={() => onAdd("savings")} className="rounded-2xl bg-sky-400 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200">자산 추가</button>} /></div>}</div>
+        <div className="border-t border-line px-4 py-3 text-[11px] text-faint sm:px-5">총 {visible.length}개 · 상세를 누르면 수정·삭제할 수 있습니다.</div>
       </section>
-      <section className="rounded-2xl border border-amber-400/15 bg-amber-500/[0.04] p-5 sm:p-6"><SectionHeading eyebrow="Maturity watch" title="만기 일정" /><div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{maturities.slice(0, 6).map((record) => <button type="button" key={record.id} onClick={() => onOpenDetail(record)} className="rounded-2xl border border-amber-300/15 bg-slate-950/15 px-3.5 py-3 text-left transition hover:border-amber-300/35 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"><div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-medium text-amber-100">{record.title}</span><Icon name="chevron-right" size={14} className="text-amber-200/60" /></div><p className="mt-2 text-xs text-amber-100/60">{dateText(record.maturityDate)} · {formatRelativeDue(record.maturityDate || record.date)}</p></button>)}{!maturities.length && <p className="text-xs text-slate-500">등록된 만기 일정이 없습니다. 예금·적금에 만기일을 추가해보세요.</p>}</div></section>
+      <section className="rounded-3xl border border-amber-400/15 bg-amber-500/[0.04] p-5 sm:p-6"><SectionHeading eyebrow="Maturity watch" title="만기 일정" /><div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{maturities.slice(0, 6).map((record) => <button type="button" key={record.id} onClick={() => onOpenDetail(record)} className="rounded-3xl border border-amber-300/15 bg-card-soft px-3.5 py-3 text-left transition hover:border-amber-300/35 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300"><div className="flex items-center justify-between gap-2"><span className="truncate text-sm font-medium text-amber-100">{record.title}</span><Icon name="chevron-right" size={14} className="text-amber-200/60" /></div><p className="mt-2 text-xs text-amber-100/60">{dateText(record.maturityDate)} · {formatRelativeDue(record.maturityDate || record.date)}</p></button>)}{!maturities.length && <p className="text-xs text-faint">등록된 만기 일정이 없습니다. 예금·적금에 만기일을 추가해보세요.</p>}</div></section>
     </div>
   );
 }
@@ -1406,10 +1407,10 @@ function TaskEditModal({
     onSave(draft);
   };
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/75 p-0 backdrop-blur-sm sm:items-center sm:p-6">
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="task-edit-title" className="flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl border border-white/[0.12] bg-[#111827] shadow-2xl shadow-black/50 sm:max-h-[90vh] sm:rounded-3xl">
-        <div className="flex items-start justify-between border-b border-white/[0.08] px-5 py-5 sm:px-7"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-300/80">작업 상세</p><h2 id="task-edit-title" className="mt-1 text-xl font-semibold text-white">작업 수정</h2><p className="mt-1 text-xs text-slate-500">작업 정보와 부수입 연결을 함께 관리합니다.</p></div><button type="button" onClick={onClose} aria-label="작업 수정 닫기" className="rounded-xl p-2 text-slate-400 hover:bg-white/[0.08] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="close" size={20} /></button></div>
-        <form onSubmit={handleSubmit} className="overflow-y-auto px-5 py-5 sm:px-7 sm:py-6"><div className="grid gap-4 sm:grid-cols-2"><div className="sm:col-span-2"><FieldLabel htmlFor="edit-task-title" required>작업 이름</FieldLabel><input id="edit-task-title" value={draft.title} onChange={(event) => update("title", event.target.value)} className={fieldClass} aria-invalid={Boolean(validationError)} aria-describedby={validationError ? "task-validation-error" : undefined} /></div><div><FieldLabel htmlFor="edit-task-date">작업일</FieldLabel><input id="edit-task-date" type="date" value={draft.workDate} onChange={(event) => update("workDate", event.target.value)} className={fieldClass} /></div><div><FieldLabel htmlFor="edit-task-course">과정·과목</FieldLabel><input id="edit-task-course" value={draft.course} onChange={(event) => update("course", event.target.value)} className={fieldClass} placeholder="예: 기초 과정" /></div><div><FieldLabel htmlFor="edit-task-session">회차</FieldLabel><input id="edit-task-session" value={draft.session} onChange={(event) => update("session", event.target.value)} className={fieldClass} placeholder="예: 3회차" /></div><div><FieldLabel htmlFor="edit-task-client">고객·학교</FieldLabel><input id="edit-task-client" value={draft.clientOrSchool} onChange={(event) => update("clientOrSchool", event.target.value)} className={fieldClass} placeholder="예: 고객 또는 학교" /></div><div><FieldLabel htmlFor="edit-task-amount">예상 금액</FieldLabel><input id="edit-task-amount" type="number" min="0" value={draft.amount} onChange={(event) => update("amount", event.target.value)} className={`${fieldClass} text-right tabular-nums`} placeholder="0" /></div><div><FieldLabel htmlFor="edit-task-sent">발송일</FieldLabel><input id="edit-task-sent" type="date" value={draft.sentAt} onChange={(event) => update("sentAt", event.target.value)} className={fieldClass} /></div><div><FieldLabel htmlFor="edit-task-status">상태</FieldLabel><div className="relative"><select id="edit-task-status" value={draft.status} onChange={(event) => update("status", event.target.value as WorkStatus)} className={selectClass}>{(["planned", "in-progress", "completed", "sent", "paid"] as WorkStatus[]).map((status) => <option key={status} value={status} className="bg-slate-900">{taskStatusLabels[status]}</option>)}</select><Icon name="chevron-down" size={15} className="pointer-events-none absolute right-3 top-[34px] text-slate-500" /></div></div><div className="sm:col-span-2"><FieldLabel htmlFor="edit-task-link">연결된 부수입 (선택)</FieldLabel><div className="relative"><select id="edit-task-link" value={draft.sideIncomeTransactionId} onChange={(event) => update("sideIncomeTransactionId", event.target.value)} className={selectClass}><option value="" className="bg-slate-900">연결하지 않음</option>{sideIncomeRecords.map((record) => <option key={record.id} value={record.id} className="bg-slate-900">{record.title} · {currency(record.amount)}</option>)}</select><Icon name="chevron-down" size={15} className="pointer-events-none absolute right-3 top-[34px] text-slate-500" /></div></div><div className="sm:col-span-2"><FieldLabel htmlFor="edit-task-note">메모</FieldLabel><textarea id="edit-task-note" rows={3} value={draft.note} onChange={(event) => update("note", event.target.value)} className={`${fieldClass} h-auto resize-none py-3`} placeholder="작업 메모" /></div></div>{validationError && <p id="task-validation-error" role="alert" className="mt-4 flex items-center gap-2 rounded-xl border border-rose-400/20 bg-rose-500/10 px-3 py-2.5 text-xs text-rose-200"><Icon name="info" size={15} />{validationError}</p>}<div className="mt-6 flex flex-col-reverse gap-2 border-t border-white/[0.08] pt-5 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} className="h-11 rounded-xl px-5 text-sm text-slate-400 hover:bg-white/[0.06] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">취소</button><button type="submit" disabled={saving} className="inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 hover:bg-sky-300 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200">{saving && <Icon name="refresh" size={16} className="animate-spin" />}변경 저장</button></div></form>
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-scrim p-0 backdrop-blur-sm sm:items-center sm:p-6">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="task-edit-title" className="flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:max-h-[90vh] sm:rounded-3xl">
+        <div className="flex items-start justify-between border-b border-line px-5 py-5 sm:px-7"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-300/80">작업 상세</p><h2 id="task-edit-title" className="mt-1 text-xl font-semibold text-ink">작업 수정</h2><p className="mt-1 text-xs text-faint">작업 정보와 부수입 연결을 함께 관리합니다.</p></div><button type="button" onClick={onClose} aria-label="작업 수정 닫기" className="rounded-2xl p-2 text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="close" size={20} /></button></div>
+        <form onSubmit={handleSubmit} className="overflow-y-auto px-5 py-5 sm:px-7 sm:py-6"><div className="grid gap-4 sm:grid-cols-2"><div className="sm:col-span-2"><FieldLabel htmlFor="edit-task-title" required>작업 이름</FieldLabel><input id="edit-task-title" value={draft.title} onChange={(event) => update("title", event.target.value)} className={fieldClass} aria-invalid={Boolean(validationError)} aria-describedby={validationError ? "task-validation-error" : undefined} /></div><div><FieldLabel htmlFor="edit-task-date">작업일</FieldLabel><input id="edit-task-date" type="date" value={draft.workDate} onChange={(event) => update("workDate", event.target.value)} className={fieldClass} /></div><div><FieldLabel htmlFor="edit-task-course">과정·과목</FieldLabel><input id="edit-task-course" value={draft.course} onChange={(event) => update("course", event.target.value)} className={fieldClass} placeholder="예: 기초 과정" /></div><div><FieldLabel htmlFor="edit-task-session">회차</FieldLabel><input id="edit-task-session" value={draft.session} onChange={(event) => update("session", event.target.value)} className={fieldClass} placeholder="예: 3회차" /></div><div><FieldLabel htmlFor="edit-task-client">고객·학교</FieldLabel><input id="edit-task-client" value={draft.clientOrSchool} onChange={(event) => update("clientOrSchool", event.target.value)} className={fieldClass} placeholder="예: 고객 또는 학교" /></div><div><FieldLabel htmlFor="edit-task-amount">예상 금액</FieldLabel><input id="edit-task-amount" type="number" min="0" value={draft.amount} onChange={(event) => update("amount", event.target.value)} className={`${fieldClass} text-right tabular-nums`} placeholder="0" /></div><div><FieldLabel htmlFor="edit-task-sent">발송일</FieldLabel><input id="edit-task-sent" type="date" value={draft.sentAt} onChange={(event) => update("sentAt", event.target.value)} className={fieldClass} /></div><div><FieldLabel htmlFor="edit-task-status">상태</FieldLabel><div className="relative"><select id="edit-task-status" value={draft.status} onChange={(event) => update("status", event.target.value as WorkStatus)} className={selectClass}>{(["planned", "in-progress", "completed", "sent", "paid"] as WorkStatus[]).map((status) => <option key={status} value={status} className="bg-surface">{taskStatusLabels[status]}</option>)}</select><Icon name="chevron-down" size={15} className="pointer-events-none absolute right-3 top-[34px] text-faint" /></div></div><div className="sm:col-span-2"><FieldLabel htmlFor="edit-task-link">연결된 부수입 (선택)</FieldLabel><div className="relative"><select id="edit-task-link" value={draft.sideIncomeTransactionId} onChange={(event) => update("sideIncomeTransactionId", event.target.value)} className={selectClass}><option value="" className="bg-surface">연결하지 않음</option>{sideIncomeRecords.map((record) => <option key={record.id} value={record.id} className="bg-surface">{record.title} · {currency(record.amount)}</option>)}</select><Icon name="chevron-down" size={15} className="pointer-events-none absolute right-3 top-[34px] text-faint" /></div></div><div className="sm:col-span-2"><FieldLabel htmlFor="edit-task-note">메모</FieldLabel><textarea id="edit-task-note" rows={3} value={draft.note} onChange={(event) => update("note", event.target.value)} className={`${fieldClass} h-auto resize-none py-3`} placeholder="작업 메모" /></div></div>{validationError && <p id="task-validation-error" role="alert" className="mt-4 flex items-center gap-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-3 py-2.5 text-xs text-rose-200"><Icon name="info" size={15} />{validationError}</p>}<div className="mt-6 flex flex-col-reverse gap-2 border-t border-line pt-5 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} className="h-11 rounded-2xl px-5 text-sm text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">취소</button><button type="submit" disabled={saving} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 hover:bg-sky-300 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200">{saving && <Icon name="refresh" size={16} className="animate-spin" />}변경 저장</button></div></form>
       </div>
     </div>
   );
@@ -1438,13 +1439,13 @@ function TaskDetailModal({
     ["발송일", task.sentAt ? dateText(task.sentAt) : "미입력"],
     ["부수입 연결", task.sideIncomeTransactionId ? "연결됨" : "연결하지 않음"],
   ];
-  return <div className="fixed inset-0 z-40 flex items-end justify-center bg-slate-950/75 p-0 backdrop-blur-sm sm:items-center sm:p-6"><div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="task-detail-title" className="w-full max-w-lg overflow-hidden rounded-t-3xl border border-white/[0.12] bg-[#111827] shadow-2xl shadow-black/50 sm:rounded-3xl"><div className="flex items-start justify-between border-b border-white/[0.08] px-5 py-5 sm:px-7"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-300/80">작업 상세</p><h2 id="task-detail-title" className="mt-2 text-xl font-semibold text-white">{task.title}</h2><div className="mt-2"><StatusBadge status={task.status} /></div></div><button type="button" onClick={onClose} aria-label="작업 상세 닫기" className="rounded-xl p-2 text-slate-400 hover:bg-white/[0.08] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="close" size={20} /></button></div><div className="px-5 py-5 sm:px-7"><dl className="divide-y divide-white/[0.07] rounded-2xl border border-white/[0.07] bg-white/[0.025] px-4">{details.map(([label, value]) => <div key={label} className="flex items-center justify-between gap-4 py-3 text-sm"><dt className="text-slate-500">{label}</dt><dd className="text-right text-slate-200">{value}</dd></div>)}</dl>{(task.memo || task.description) && <p className="mt-4 rounded-2xl bg-white/[0.035] px-4 py-3 text-sm leading-6 text-slate-400">{task.memo || task.description}</p>}<div className="mt-5 flex gap-2"><button type="button" onClick={() => onDelete(task)} className="inline-flex h-11 items-center gap-2 rounded-xl border border-rose-400/20 px-4 text-sm font-medium text-rose-200 hover:bg-rose-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"><Icon name="trash" size={16} /> 삭제</button><button type="button" onClick={() => onEdit(task)} className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-white/[0.08] px-4 text-sm font-medium text-white hover:bg-white/[0.14] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="edit" size={16} /> 수정</button></div></div></div></div>;
+  return <div className="fixed inset-0 z-40 flex items-end justify-center bg-scrim p-0 backdrop-blur-sm sm:items-center sm:p-6"><div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="task-detail-title" className="w-full max-w-lg overflow-hidden rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:rounded-3xl"><div className="flex items-start justify-between border-b border-line px-5 py-5 sm:px-7"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-300/80">작업 상세</p><h2 id="task-detail-title" className="mt-2 text-xl font-semibold text-ink">{task.title}</h2><div className="mt-2"><StatusBadge status={task.status} /></div></div><button type="button" onClick={onClose} aria-label="작업 상세 닫기" className="rounded-2xl p-2 text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="close" size={20} /></button></div><div className="px-5 py-5 sm:px-7"><dl className="divide-y divide-line rounded-3xl border border-line bg-card-soft px-4">{details.map(([label, value]) => <div key={label} className="flex items-center justify-between gap-4 py-3 text-sm"><dt className="text-faint">{label}</dt><dd className="text-right text-body">{value}</dd></div>)}</dl>{(task.memo || task.description) && <p className="mt-4 rounded-3xl bg-card px-4 py-3 text-sm leading-6 text-muted">{task.memo || task.description}</p>}<div className="mt-5 flex gap-2"><button type="button" onClick={() => onDelete(task)} className="inline-flex h-11 items-center gap-2 rounded-2xl border border-rose-400/20 px-4 text-sm font-medium text-rose-200 hover:bg-rose-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"><Icon name="trash" size={16} /> 삭제</button><button type="button" onClick={() => onEdit(task)} className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl bg-card-strong px-4 text-sm font-medium text-ink hover:bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="edit" size={16} /> 수정</button></div></div></div></div>;
 }
 
 function TaskDeleteDialog({ task, onClose, onConfirm }: { task: WorkItem | null; onClose: () => void; onConfirm: () => void }) {
   const dialogRef = useDialogFocus(Boolean(task), onClose);
   if (!task) return null;
-  return <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 p-5 backdrop-blur-sm"><div ref={dialogRef} role="alertdialog" aria-modal="true" aria-labelledby="task-delete-title" aria-describedby="task-delete-copy" className="w-full max-w-sm rounded-3xl border border-white/[0.12] bg-[#111827] p-6 shadow-2xl shadow-black/60"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-500/10 text-rose-200"><Icon name="trash" size={20} /></span><h2 id="task-delete-title" className="mt-5 text-lg font-semibold text-white">작업을 삭제할까요?</h2><p id="task-delete-copy" className="mt-2 text-sm leading-6 text-slate-400"><span className="font-medium text-slate-200">{task.title}</span> 작업과 연결 정보가 삭제됩니다.</p><div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} className="h-11 rounded-xl px-4 text-sm text-slate-400 hover:bg-white/[0.06] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">취소</button><button type="button" onClick={onConfirm} className="h-11 rounded-xl bg-rose-500 px-5 text-sm font-semibold text-white hover:bg-rose-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300">삭제하기</button></div></div></div>;
+  return <div className="fixed inset-0 z-[60] flex items-center justify-center bg-scrim p-5 backdrop-blur-sm"><div ref={dialogRef} role="alertdialog" aria-modal="true" aria-labelledby="task-delete-title" aria-describedby="task-delete-copy" className="w-full max-w-sm rounded-3xl border border-line-strong bg-surface p-6 shadow-2xl shadow-black/60"><span className="flex h-11 w-11 items-center justify-center rounded-3xl bg-rose-500/10 text-rose-200"><Icon name="trash" size={20} /></span><h2 id="task-delete-title" className="mt-5 text-lg font-semibold text-ink">작업을 삭제할까요?</h2><p id="task-delete-copy" className="mt-2 text-sm leading-6 text-muted"><span className="font-medium text-body">{task.title}</span> 작업과 연결 정보가 삭제됩니다.</p><div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} className="h-11 rounded-2xl px-4 text-sm text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">취소</button><button type="button" onClick={onConfirm} className="h-11 rounded-2xl bg-rose-500 px-5 text-sm font-semibold text-ink hover:bg-rose-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300">삭제하기</button></div></div></div>;
 }
 
 function TasksPanel({
@@ -1488,12 +1489,12 @@ function TasksPanel({
 
   return (
     <div className="space-y-5">
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div className="rounded-2xl border border-sky-400/15 bg-sky-500/[0.05] p-4"><p className="text-xs text-sky-200/70">진행 중</p><p className="mt-2 text-xl font-semibold text-sky-100">{(counts["in-progress"] || 0) + (counts.planned || 0)}건</p></div><div className="rounded-2xl border border-violet-400/15 bg-violet-500/[0.05] p-4"><p className="text-xs text-violet-200/70">발송 대기</p><p className="mt-2 text-xl font-semibold text-violet-100">{counts.sent || 0}건</p></div><div className="rounded-2xl border border-emerald-400/15 bg-emerald-500/[0.05] p-4"><p className="text-xs text-emerald-200/70">입금 완료</p><p className="mt-2 text-xl font-semibold text-emerald-100">{counts.paid || 0}건</p></div><div className="rounded-2xl border border-white/[0.08] bg-white/[0.035] p-4"><p className="text-xs text-slate-500">작업 보수 합계</p><p className="mt-2 text-xl font-semibold tabular-nums text-slate-100">{currency(tasks.reduce((sum, task) => sum + (task.amount || 0), 0))}</p></div></div>
-      <section className="rounded-2xl border border-white/[0.08] bg-white/[0.035]">
-        <div className="flex flex-col gap-4 border-b border-white/[0.08] p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">Work board</p><h2 className="mt-1 text-lg font-semibold text-slate-100">작업 관리</h2><p className="mt-1 text-xs text-slate-500">작업을 수입 기록과 연결해 정산 흐름을 놓치지 않아요.</p></div><button type="button" onClick={() => setShowForm((value) => !value)} className="inline-flex h-9 items-center gap-1.5 rounded-lg bg-emerald-400 px-3 text-xs font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"><Icon name="plus" size={14} /> 작업 추가</button></div><div className="flex flex-wrap items-center gap-2"><select aria-label="작업 연도" value={year} onChange={(event) => setYear(event.target.value)} className="h-9 rounded-lg border border-white/[0.1] bg-slate-950/60 px-3 text-xs text-slate-200 outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15"><option>{year}</option><option>{String(Number(year) - 1)}</option><option>{String(Number(year) + 1)}</option></select><SelectField compact="sm" id="work-status" label="작업 상태" value={statusFilter} onChange={setStatusFilter} options={["전체 상태", ...statusOptions.map((status) => taskStatusLabels[status])]} /></div></div>
-        {showForm && <form onSubmit={createTask} className="grid gap-3 border-b border-white/[0.08] bg-emerald-500/[0.025] p-4 sm:grid-cols-2 sm:p-5"><div className="sm:col-span-2"><FieldLabel htmlFor="task-title" required>작업 이름</FieldLabel><input id="task-title" value={draft.title} onChange={(event) => setDraft((value) => ({ ...value, title: event.target.value }))} className={fieldClass} placeholder="예: 강의 자료 정리" /></div><div><FieldLabel htmlFor="task-work-date">작업일</FieldLabel><input id="task-work-date" type="date" value={draft.workDate} onChange={(event) => setDraft((value) => ({ ...value, workDate: event.target.value }))} className={fieldClass} /></div><div><FieldLabel htmlFor="task-course">과정·과목</FieldLabel><input id="task-course" value={draft.course} onChange={(event) => setDraft((value) => ({ ...value, course: event.target.value }))} className={fieldClass} placeholder="예: 기초 과정" /></div><div><FieldLabel htmlFor="task-session">회차</FieldLabel><input id="task-session" value={draft.session} onChange={(event) => setDraft((value) => ({ ...value, session: event.target.value }))} className={fieldClass} placeholder="예: 3회차" /></div><div><FieldLabel htmlFor="task-client">고객·학교</FieldLabel><input id="task-client" value={draft.clientOrSchool} onChange={(event) => setDraft((value) => ({ ...value, clientOrSchool: event.target.value }))} className={fieldClass} placeholder="예: 고객 또는 학교" /></div><div><FieldLabel htmlFor="task-amount">예상 금액</FieldLabel><input id="task-amount" type="number" min="0" value={draft.amount} onChange={(event) => setDraft((value) => ({ ...value, amount: event.target.value }))} className={`${fieldClass} text-right tabular-nums`} placeholder="0" /></div><div><SelectField id="task-new-status" label="상태" value={taskStatusLabels[draft.status]} onChange={(value) => setDraft((previous) => ({ ...previous, status: statusOptions.find((status) => taskStatusLabels[status] === value) || "planned" }))} options={statusOptions.map((status) => taskStatusLabels[status])} /></div><div className="flex items-end justify-end gap-2 sm:col-span-2"><button type="button" onClick={() => setShowForm(false)} className="h-10 rounded-xl px-4 text-xs text-slate-400 hover:bg-white/[0.06] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">취소</button><button type="submit" className="h-10 rounded-xl bg-emerald-400 px-5 text-xs font-semibold text-slate-950 hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200">작업 저장</button></div></form>}
-        <div className="divide-y divide-white/[0.06]">{visible.map((task) => <div key={task.id} className="flex flex-col gap-3 px-4 py-4 transition hover:bg-white/[0.02] sm:flex-row sm:items-center sm:px-5"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-200"><Icon name="briefcase" size={17} /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-sm font-medium text-slate-200">{task.title}</h3><StatusBadge status={task.status} /></div><p className="mt-1 truncate text-xs text-slate-500">{[task.course, task.session, task.clientOrSchool].filter(Boolean).join(" · ") || "과정·고객 정보 미입력"}</p><div className="mt-2 flex flex-wrap gap-3 text-[11px] text-slate-500"><span>{task.workDate ? dateText(task.workDate) : "작업일 미정"}</span>{task.amount ? <span className="tabular-nums text-slate-300">{currency(task.amount)}</span> : null}{task.sentAt ? <span>발송 {dateText(task.sentAt)}</span> : null}{task.sideIncomeTransactionId ? <span className="inline-flex items-center gap-1 text-emerald-300"><Icon name="link" size={12} /> 부수입 연결</span> : null}</div></div><div className="flex items-center gap-2 self-end sm:self-center"><label className="sr-only" htmlFor={`status-${task.id}`}>상태 변경</label><select id={`status-${task.id}`} value={task.status} onChange={(event) => onStatusChange(task.id, event.target.value as WorkStatus)} className="h-9 rounded-lg border border-white/[0.1] bg-slate-950/60 px-2.5 text-xs text-slate-300 outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15">{statusOptions.map((status) => <option key={status} value={status}>{taskStatusLabels[status]}</option>)}</select><button type="button" onClick={() => onStatusChange(task.id, task.status === "completed" ? "paid" : "completed")} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/[0.1] px-2.5 text-xs text-slate-300 transition hover:bg-white/[0.08] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"><Icon name="check" size={14} /> {task.status === "paid" ? "완료" : "처리"}</button><button type="button" onClick={() => setDetailTask(task)} className="inline-flex h-9 items-center gap-1.5 rounded-lg border border-white/[0.1] px-2.5 text-xs text-slate-300 transition hover:bg-white/[0.08] hover:text-white focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="more" size={15} /> 상세</button></div></div>)}{!visible.length && <div className="p-4 sm:p-5"><EmptyState icon="briefcase" title="조건에 맞는 작업이 없습니다" description="작업을 추가하거나 조회 조건을 바꿔보세요." action={<button type="button" onClick={() => setShowForm(true)} className="rounded-xl bg-emerald-400 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200">작업 추가</button>} /></div>}</div>
-        <div className="border-t border-white/[0.07] px-4 py-3 text-[11px] text-slate-500 sm:px-5">총 {visible.length}건 · 상태를 변경하면 바로 저장됩니다.</div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4"><div className="rounded-3xl border border-sky-400/15 bg-sky-500/[0.05] p-4"><p className="text-xs text-sky-200/70">진행 중</p><p className="mt-2 text-xl font-semibold text-sky-100">{(counts["in-progress"] || 0) + (counts.planned || 0)}건</p></div><div className="rounded-3xl border border-violet-400/15 bg-violet-500/[0.05] p-4"><p className="text-xs text-violet-200/70">발송 대기</p><p className="mt-2 text-xl font-semibold text-violet-100">{counts.sent || 0}건</p></div><div className="rounded-3xl border border-emerald-400/15 bg-emerald-500/[0.05] p-4"><p className="text-xs text-emerald-200/70">입금 완료</p><p className="mt-2 text-xl font-semibold text-emerald-100">{counts.paid || 0}건</p></div><div className="rounded-3xl border border-line bg-card p-4"><p className="text-xs text-faint">작업 보수 합계</p><p className="mt-2 text-xl font-semibold tabular-nums text-ink">{currency(tasks.reduce((sum, task) => sum + (task.amount || 0), 0))}</p></div></div>
+      <section className="rounded-3xl border border-line bg-card">
+        <div className="flex flex-col gap-4 border-b border-line p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-faint">Work board</p><h2 className="mt-1 text-lg font-semibold text-ink">작업 관리</h2><p className="mt-1 text-xs text-faint">작업을 수입 기록과 연결해 정산 흐름을 놓치지 않아요.</p></div><button type="button" onClick={() => setShowForm((value) => !value)} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-400 px-3 text-xs font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"><Icon name="plus" size={14} /> 작업 추가</button></div><div className="flex flex-wrap items-center gap-2"><select aria-label="작업 연도" value={year} onChange={(event) => setYear(event.target.value)} className="h-9 rounded-xl border border-line bg-field px-3 text-xs text-body outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15"><option>{year}</option><option>{String(Number(year) - 1)}</option><option>{String(Number(year) + 1)}</option></select><SelectField compact="sm" id="work-status" label="작업 상태" value={statusFilter} onChange={setStatusFilter} options={["전체 상태", ...statusOptions.map((status) => taskStatusLabels[status])]} /></div></div>
+        {showForm && <form onSubmit={createTask} className="grid gap-3 border-b border-line bg-emerald-500/[0.025] p-4 sm:grid-cols-2 sm:p-5"><div className="sm:col-span-2"><FieldLabel htmlFor="task-title" required>작업 이름</FieldLabel><input id="task-title" value={draft.title} onChange={(event) => setDraft((value) => ({ ...value, title: event.target.value }))} className={fieldClass} placeholder="예: 강의 자료 정리" /></div><div><FieldLabel htmlFor="task-work-date">작업일</FieldLabel><input id="task-work-date" type="date" value={draft.workDate} onChange={(event) => setDraft((value) => ({ ...value, workDate: event.target.value }))} className={fieldClass} /></div><div><FieldLabel htmlFor="task-course">과정·과목</FieldLabel><input id="task-course" value={draft.course} onChange={(event) => setDraft((value) => ({ ...value, course: event.target.value }))} className={fieldClass} placeholder="예: 기초 과정" /></div><div><FieldLabel htmlFor="task-session">회차</FieldLabel><input id="task-session" value={draft.session} onChange={(event) => setDraft((value) => ({ ...value, session: event.target.value }))} className={fieldClass} placeholder="예: 3회차" /></div><div><FieldLabel htmlFor="task-client">고객·학교</FieldLabel><input id="task-client" value={draft.clientOrSchool} onChange={(event) => setDraft((value) => ({ ...value, clientOrSchool: event.target.value }))} className={fieldClass} placeholder="예: 고객 또는 학교" /></div><div><FieldLabel htmlFor="task-amount">예상 금액</FieldLabel><input id="task-amount" type="number" min="0" value={draft.amount} onChange={(event) => setDraft((value) => ({ ...value, amount: event.target.value }))} className={`${fieldClass} text-right tabular-nums`} placeholder="0" /></div><div><SelectField id="task-new-status" label="상태" value={taskStatusLabels[draft.status]} onChange={(value) => setDraft((previous) => ({ ...previous, status: statusOptions.find((status) => taskStatusLabels[status] === value) || "planned" }))} options={statusOptions.map((status) => taskStatusLabels[status])} /></div><div className="flex items-end justify-end gap-2 sm:col-span-2"><button type="button" onClick={() => setShowForm(false)} className="h-10 rounded-2xl px-4 text-xs text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">취소</button><button type="submit" className="h-10 rounded-2xl bg-emerald-400 px-5 text-xs font-semibold text-slate-950 hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200">작업 저장</button></div></form>}
+        <div className="divide-y divide-line">{visible.map((task) => <div key={task.id} className="flex flex-col gap-3 px-4 py-4 transition hover:bg-card-soft sm:flex-row sm:items-center sm:px-5"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-3xl bg-sky-500/10 text-sky-200"><Icon name="briefcase" size={17} /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-sm font-medium text-body">{task.title}</h3><StatusBadge status={task.status} /></div><p className="mt-1 truncate text-xs text-faint">{[task.course, task.session, task.clientOrSchool].filter(Boolean).join(" · ") || "과정·고객 정보 미입력"}</p><div className="mt-2 flex flex-wrap gap-3 text-[11px] text-faint"><span>{task.workDate ? dateText(task.workDate) : "작업일 미정"}</span>{task.amount ? <span className="tabular-nums text-body">{currency(task.amount)}</span> : null}{task.sentAt ? <span>발송 {dateText(task.sentAt)}</span> : null}{task.sideIncomeTransactionId ? <span className="inline-flex items-center gap-1 text-emerald-300"><Icon name="link" size={12} /> 부수입 연결</span> : null}</div></div><div className="flex items-center gap-2 self-end sm:self-center"><label className="sr-only" htmlFor={`status-${task.id}`}>상태 변경</label><select id={`status-${task.id}`} value={task.status} onChange={(event) => onStatusChange(task.id, event.target.value as WorkStatus)} className="h-9 rounded-xl border border-line bg-field px-2.5 text-xs text-body outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15">{statusOptions.map((status) => <option key={status} value={status}>{taskStatusLabels[status]}</option>)}</select><button type="button" onClick={() => onStatusChange(task.id, task.status === "completed" ? "paid" : "completed")} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-line px-2.5 text-xs text-body transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"><Icon name="check" size={14} /> {task.status === "paid" ? "완료" : "처리"}</button><button type="button" onClick={() => setDetailTask(task)} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-line px-2.5 text-xs text-body transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="more" size={15} /> 상세</button></div></div>)}{!visible.length && <div className="p-4 sm:p-5"><EmptyState icon="briefcase" title="조건에 맞는 작업이 없습니다" description="작업을 추가하거나 조회 조건을 바꿔보세요." action={<button type="button" onClick={() => setShowForm(true)} className="rounded-2xl bg-emerald-400 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200">작업 추가</button>} /></div>}</div>
+        <div className="border-t border-line px-4 py-3 text-[11px] text-faint sm:px-5">총 {visible.length}건 · 상태를 변경하면 바로 저장됩니다.</div>
       </section>
       <TaskDetailModal task={detailTask} onClose={() => setDetailTask(null)} onEdit={(task) => { setDetailTask(null); setEditingTask(task); }} onDelete={(task) => { setDetailTask(null); setDeletingTask(task); }} />
       <TaskEditModal task={editingTask} sideIncomeRecords={sideIncomeRecords} saving={saving} onClose={() => setEditingTask(null)} onSave={(nextDraft) => { if (!editingTask) return; onUpdateTask({ ...editingTask, title: nextDraft.title.trim(), workDate: nextDraft.workDate || undefined, course: nextDraft.course.trim() || undefined, session: nextDraft.session.trim() || undefined, clientOrSchool: nextDraft.clientOrSchool.trim() || undefined, amount: Number(nextDraft.amount) || undefined, sentAt: nextDraft.sentAt || undefined, memo: nextDraft.note.trim() || undefined, description: nextDraft.note.trim() || undefined, status: nextDraft.status, sideIncomeTransactionId: nextDraft.sideIncomeTransactionId || undefined }); setEditingTask(null); }} />
@@ -1797,19 +1798,115 @@ export default function GagebuDashboard() {
   const activeNav = navItems.find((item) => item.key === activeView) || navItems[0];
 
   return (
-    <div className="min-h-screen bg-[#080d18] text-slate-100 selection:bg-emerald-300/30 selection:text-white">
-      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[248px] flex-col border-r border-white/[0.08] bg-[#0b1220] lg:flex">
-        <div className="flex h-[82px] items-center gap-3 border-b border-white/[0.08] px-6"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-500/20"><Icon name="wallet" size={19} /></span><div><p className="text-sm font-semibold tracking-tight text-white">가계부</p><p className="text-[10px] text-slate-500">personal finance</p></div></div>
-        <nav aria-label="주 메뉴" className="flex-1 px-3 py-6"><p className="px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">Workspace</p><div className="mt-3 space-y-1">{navItems.map((item) => <button key={item.key} type="button" onClick={() => setActiveView(item.key)} aria-current={activeView === item.key ? "page" : undefined} className={`group flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 ${activeView === item.key ? "bg-emerald-400/10 text-emerald-200" : "text-slate-500 hover:bg-white/[0.05] hover:text-slate-200"}`}><Icon name={item.icon} size={18} /><span className="flex-1"><span className="block text-sm font-medium">{item.label}</span><span className="mt-0.5 block text-[10px] text-slate-600 group-hover:text-slate-500">{item.description}</span></span>{activeView === item.key && <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" aria-hidden="true" />}</button>)}</div></nav>
-        <div className="border-t border-white/[0.08] p-3"><div className="flex items-center gap-2 rounded-xl bg-white/[0.035] px-3 py-2.5" aria-label="저장 상태"><span className="h-2 w-2 rounded-full bg-emerald-400" /><span className="text-[11px] text-slate-500">안전하게 저장됨</span></div></div>
+    <div className="app-glow relative min-h-screen bg-app text-body selection:bg-emerald-300/30 selection:text-ink">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-[252px] flex-col border-r border-line bg-surface/85 backdrop-blur-xl lg:flex">
+        <div className="flex h-[82px] items-center gap-3 border-b border-line px-6">
+          <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-300 to-emerald-500 text-emerald-950 shadow-lg shadow-emerald-500/25">
+            <Icon name="wallet" size={19} />
+          </span>
+          <div>
+            <p className="text-sm font-semibold tracking-tight text-ink">가계부</p>
+            <p className="text-[10px] text-faint">오늘도 알뜰하게 ✿</p>
+          </div>
+        </div>
+        <nav aria-label="주 메뉴" className="flex-1 px-3 py-6">
+          <p className="px-3 text-[10px] font-semibold uppercase tracking-[0.18em] text-faint">Workspace</p>
+          <div className="mt-3 space-y-1.5">
+            {navItems.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setActiveView(item.key)}
+                aria-current={activeView === item.key ? "page" : undefined}
+                className={`group flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 ${
+                  activeView === item.key
+                    ? "bg-gradient-to-r from-emerald-400/22 to-emerald-400/8 text-emerald-200 shadow-sm"
+                    : "text-faint hover:-translate-y-0.5 hover:bg-hover hover:text-body"
+                }`}
+              >
+                <Icon name={item.icon} size={18} />
+                <span className="flex-1">
+                  <span className="block text-sm font-medium">{item.label}</span>
+                  <span className="mt-0.5 block text-[10px] text-faint">{item.description}</span>
+                </span>
+                {activeView === item.key && <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" aria-hidden="true" />}
+              </button>
+            ))}
+          </div>
+        </nav>
+        <div className="border-t border-line p-3">
+          <div className="flex items-center gap-2 rounded-2xl bg-card px-3 py-2.5" aria-label="저장 상태">
+            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+            <span className="text-[11px] text-faint">안전하게 저장됨</span>
+          </div>
+        </div>
       </aside>
 
-      <div className="lg:pl-[248px]">
-        <header className="sticky top-0 z-20 border-b border-white/[0.08] bg-[#080d18]/90 backdrop-blur-xl"><div className="mx-auto flex h-[74px] max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-7 xl:px-10"><div className="flex min-w-0 items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-400 text-slate-950 lg:hidden"><Icon name="wallet" size={18} /></div><div className="min-w-0"><p className="text-[11px] font-medium text-slate-500">나의 금융 워크스페이스</p><h1 className="mt-0.5 truncate text-lg font-semibold tracking-tight text-white">{activeNav.label}</h1></div></div><div className="flex shrink-0 items-center gap-2 sm:gap-3"><label className="hidden items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2 xl:flex"><Icon name="calendar" size={15} className="text-slate-500" /><span className="sr-only">기준 월</span><input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} className="w-[115px] bg-transparent text-xs text-slate-300 outline-none" /></label><button type="button" onClick={() => setImportOpen(true)} className="hidden h-10 items-center gap-1.5 rounded-xl border border-sky-400/20 px-3 text-xs font-medium text-sky-200 transition hover:bg-sky-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 lg:inline-flex"><Icon name="upload" size={15} /> 가져오기</button><button type="button" onClick={() => openAdd()} className="inline-flex h-10 items-center gap-1.5 rounded-xl bg-emerald-400 px-3.5 text-xs font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"><Icon name="plus" size={15} /> <span className="hidden sm:inline">새 내역</span><span className="sm:hidden">추가</span></button><AuthAccountControls /></div></div><nav aria-label="모바일 메뉴" className="flex gap-1 overflow-x-auto border-t border-white/[0.06] px-3 py-2 lg:hidden">{navItems.map((item) => <button key={item.key} type="button" onClick={() => setActiveView(item.key)} aria-current={activeView === item.key ? "page" : undefined} className={`flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 ${activeView === item.key ? "bg-emerald-400/10 text-emerald-200" : "text-slate-500 hover:bg-white/[0.05] hover:text-slate-200"}`}><Icon name={item.icon} size={14} />{item.label}</button>)}</nav></header>
+      <div className="relative z-10 lg:pl-[252px]">
+        <header className="sticky top-0 z-20 border-b border-line bg-app/80 backdrop-blur-xl">
+          <div className="mx-auto flex h-[74px] max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-7 xl:px-10">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-300 to-emerald-500 text-emerald-950 lg:hidden">
+                <Icon name="wallet" size={18} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-[11px] font-medium text-faint">나의 금융 워크스페이스</p>
+                <h1 className="mt-0.5 truncate text-lg font-semibold tracking-tight text-ink">{activeNav.label}</h1>
+              </div>
+            </div>
+            <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
+              <label className="hidden items-center gap-2 rounded-2xl border border-line bg-card px-3 py-2 xl:flex">
+                <Icon name="calendar" size={15} className="text-faint" />
+                <span className="sr-only">기준 월</span>
+                <input
+                  type="month"
+                  value={selectedMonth}
+                  onChange={(event) => setSelectedMonth(event.target.value)}
+                  className="w-[115px] bg-transparent text-xs text-body outline-none"
+                />
+              </label>
+              <ThemeToggle />
+              <button
+                type="button"
+                onClick={() => setImportOpen(true)}
+                className="hidden h-10 items-center gap-1.5 rounded-2xl border border-sky-400/25 px-3 text-xs font-medium text-sky-200 transition hover:-translate-y-0.5 hover:bg-sky-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 lg:inline-flex"
+              >
+                <Icon name="upload" size={15} /> 가져오기
+              </button>
+              <button
+                type="button"
+                onClick={() => openAdd()}
+                className="inline-flex h-10 items-center gap-1.5 rounded-2xl bg-gradient-to-r from-emerald-300 to-emerald-400 px-4 text-xs font-semibold text-emerald-950 shadow-lg shadow-emerald-500/25 transition hover:-translate-y-0.5 hover:shadow-emerald-500/35 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"
+              >
+                <Icon name="plus" size={15} /> <span className="hidden sm:inline">새 내역</span>
+                <span className="sm:hidden">추가</span>
+              </button>
+              <AuthAccountControls />
+            </div>
+          </div>
+          <nav aria-label="모바일 메뉴" className="flex gap-1.5 overflow-x-auto border-t border-line px-3 py-2 lg:hidden">
+            {navItems.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setActiveView(item.key)}
+                aria-current={activeView === item.key ? "page" : undefined}
+                className={`flex shrink-0 items-center gap-1.5 rounded-2xl px-3 py-2 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 ${
+                  activeView === item.key
+                    ? "bg-gradient-to-r from-emerald-400/22 to-emerald-400/8 text-emerald-200"
+                    : "text-faint hover:bg-hover hover:text-body"
+                }`}
+              >
+                <Icon name={item.icon} size={14} />
+                {item.label}
+              </button>
+            ))}
+          </nav>
+        </header>
 
         <main className="mx-auto max-w-[1440px] px-4 pb-16 pt-7 sm:px-7 sm:pt-9 xl:px-10">
-          <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm text-slate-500">{activeView === "overview" ? "오늘의 금융 흐름을 가볍게 확인해보세요." : activeNav.description}</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-white sm:text-3xl">{activeNav.label}</h2></div><div className="flex items-center gap-2 sm:hidden"><label className="flex flex-1 items-center gap-2 rounded-xl border border-white/[0.08] bg-white/[0.035] px-3 py-2.5"><Icon name="calendar" size={15} className="text-slate-500" /><span className="sr-only">기준 월</span><input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} className="w-full bg-transparent text-xs text-slate-300 outline-none" /></label><button type="button" onClick={() => setImportOpen(true)} aria-label="엑셀 가져오기" className="flex h-10 w-10 items-center justify-center rounded-xl border border-sky-400/20 text-sky-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="upload" size={16} /></button></div></div>
-          {error && <div role="alert" className="mb-5 flex items-start gap-3 rounded-2xl border border-rose-400/20 bg-rose-500/[0.07] px-4 py-3 text-sm text-rose-100"><Icon name="info" size={17} className="mt-0.5 text-rose-200" /><div className="flex-1"><p className="font-medium">데이터를 불러오는 중 문제가 생겼습니다.</p><p className="mt-1 text-xs text-rose-100/70">{error}</p></div><button type="button" onClick={() => setError("")} aria-label="오류 닫기" className="rounded-lg p-1 text-rose-200/70 hover:bg-rose-500/10 hover:text-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"><Icon name="close" size={15} /></button></div>}
+          <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm text-faint">{activeView === "overview" ? "오늘의 금융 흐름을 가볍게 확인해보세요." : activeNav.description}</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{activeNav.label}</h2></div><div className="flex items-center gap-2 sm:hidden"><label className="flex flex-1 items-center gap-2 rounded-2xl border border-line bg-card px-3 py-2.5"><Icon name="calendar" size={15} className="text-faint" /><span className="sr-only">기준 월</span><input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} className="w-full bg-transparent text-xs text-body outline-none" /></label><button type="button" onClick={() => setImportOpen(true)} aria-label="엑셀 가져오기" className="flex h-10 w-10 items-center justify-center rounded-2xl border border-sky-400/20 text-sky-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="upload" size={16} /></button></div></div>
+          {error && <div role="alert" className="mb-5 flex items-start gap-3 rounded-3xl border border-rose-400/20 bg-rose-500/[0.07] px-4 py-3 text-sm text-rose-100"><Icon name="info" size={17} className="mt-0.5 text-rose-200" /><div className="flex-1"><p className="font-medium">데이터를 불러오는 중 문제가 생겼습니다.</p><p className="mt-1 text-xs text-rose-100/70">{error}</p></div><button type="button" onClick={() => setError("")} aria-label="오류 닫기" className="rounded-xl p-1 text-rose-200/70 hover:bg-rose-500/10 hover:text-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"><Icon name="close" size={15} /></button></div>}
           {activeView === "overview" && <OverviewPanel records={records} tasks={workItems} month={selectedMonth} loading={loading} onNavigate={setActiveView} onAdd={openAdd} onOpenImport={() => setImportOpen(true)} onOpenDetail={setDetailRecord} />}
           {activeView === "transactions" && <TransactionsPanel records={records} month={selectedMonth} setMonth={setSelectedMonth} year={selectedYear} setYear={setSelectedYear} onAdd={openAdd} onOpenDetail={setDetailRecord} onOpenImport={() => setImportOpen(true)} />}
           {activeView === "assets" && <AssetsPanel records={records} year={selectedYear} setYear={setSelectedYear} onAdd={openAdd} onOpenDetail={setDetailRecord} />}
@@ -1817,7 +1914,7 @@ export default function GagebuDashboard() {
         </main>
       </div>
 
-      {toast && <div role="status" aria-live="polite" className="fixed bottom-5 left-1/2 z-[70] flex -translate-x-1/2 items-center gap-2 rounded-2xl border border-emerald-400/20 bg-[#162233] px-4 py-3 text-sm text-emerald-100 shadow-2xl shadow-black/40"><Icon name="check" size={16} className="text-emerald-300" />{toast}</div>}
+      {toast && <div role="status" aria-live="polite" className="fixed bottom-5 left-1/2 z-[70] flex -translate-x-1/2 items-center gap-2 rounded-3xl border border-emerald-400/20 bg-surface-strong px-4 py-3 text-sm text-emerald-100 shadow-2xl shadow-black/40"><Icon name="check" size={16} className="text-emerald-300" />{toast}</div>}
       <DetailModal record={detailRecord} onClose={() => setDetailRecord(null)} onEdit={openEdit} onDelete={(record) => setDeleteRecord(record)} />
       <DeleteDialog record={deleteRecord} onClose={() => setDeleteRecord(null)} onConfirm={handleDeleteConfirm} />
       <EntryModal open={entryOpen} initial={entryDraft} editingId={editingRecord?.id} workItems={workItems} saving={saving} onClose={() => { if (!saving) { setEntryOpen(false); setEditingRecord(null); } }} onSave={handleSaveDraft} />

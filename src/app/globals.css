@@ -1,23 +1,176 @@
 @import "tailwindcss";
 
+/*
+ * Theme tokens.
+ *
+ * Every surface, border and text colour in the app is expressed through the
+ * semantic names below (bg-card, border-line, text-muted, ...). Only these
+ * variables change between the dark and light themes, so the components never
+ * hard-code a palette value.
+ */
 :root {
-  --background: #080d18;
-  --foreground: #e2e8f0;
   color-scheme: dark;
+
+  --app: #14120f;
+  --app-glow-a: rgba(140, 166, 120, 0.16);
+  --app-glow-b: rgba(199, 160, 92, 0.12);
+  --app-glow-c: rgba(196, 130, 108, 0.1);
+  --surface: #1d1a16;
+  --surface-strong: #262119;
+  --card: rgba(255, 248, 236, 0.045);
+  --card-soft: rgba(255, 248, 236, 0.022);
+  --card-strong: rgba(255, 248, 236, 0.08);
+  --field: rgba(10, 8, 6, 0.5);
+  --hover: rgba(255, 248, 236, 0.075);
+  --scrim: rgba(16, 13, 10, 0.78);
+  --line: rgba(255, 244, 230, 0.1);
+  --line-strong: rgba(255, 244, 230, 0.18);
+  --ink: #f4efe6;
+  --body: #d8d0c3;
+  --muted: #a79c8c;
+  --faint: #7c7364;
+  --shadow-soft: 0 18px 40px -24px rgba(0, 0, 0, 0.9);
+
+  /*
+   * Sage / dusty blue / clay / ochre / mauve — one warm, low-chroma family.
+   * On the dark ground the 300-500 steps are the solid button fills, so they
+   * stay light enough to carry the dark ink of the matching 950 step.
+   */
+  --color-emerald-100: #e6efdc;
+  --color-emerald-200: #cfe0c0;
+  --color-emerald-300: #b8d2a5;
+  --color-emerald-400: #a6c690;
+  --color-emerald-500: #8fae78;
+  --color-sky-100: #e0ecf2;
+  --color-sky-200: #c6dbe6;
+  --color-sky-300: #a9c8d8;
+  --color-sky-400: #93b8cb;
+  --color-sky-500: #7ba0b4;
+  --color-rose-100: #f8e2da;
+  --color-rose-200: #eec8ba;
+  --color-rose-300: #e0ab97;
+  --color-rose-400: #d4947d;
+  --color-rose-500: #c07a61;
+  --color-amber-100: #f7ead0;
+  --color-amber-200: #eedaac;
+  --color-amber-300: #e3c489;
+  --color-amber-400: #d7b26c;
+  --color-amber-500: #c29a52;
+  --color-violet-100: #ece5f2;
+  --color-violet-200: #dbd0e4;
+  --color-violet-300: #c6b7d3;
+  --color-violet-400: #b2a1c2;
+  --color-violet-500: #9b88ad;
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --app: #f1ece5;
+  --app-glow-a: rgba(140, 166, 120, 0.26);
+  --app-glow-b: rgba(207, 165, 87, 0.22);
+  --app-glow-c: rgba(192, 133, 113, 0.2);
+  --surface: #fcfaf7;
+  --surface-strong: #ffffff;
+  --card: #fcfaf7;
+  --card-soft: rgba(252, 250, 247, 0.62);
+  --card-strong: #ffffff;
+  --field: #ffffff;
+  --hover: rgba(70, 55, 35, 0.06);
+  --scrim: rgba(46, 38, 28, 0.35);
+  --line: rgba(72, 56, 36, 0.12);
+  --line-strong: rgba(72, 56, 36, 0.2);
+  --ink: #2e2a23;
+  --body: #4e463b;
+  --muted: #6e6557;
+  --faint: #8e8577;
+  --shadow-soft: 0 18px 40px -26px rgba(72, 56, 36, 0.45);
+
+  /*
+   * Same five hues, remapped for a pale background:
+   *   100/200 - text on a tinted fill (needs to be dark)
+   *   400     - solid button fill, 300 is its lighter hover step
+   *   950     - the ink printed on those solid fills (ivory here, dark in the
+   *             dark theme where the fills themselves are light)
+   */
+  --color-emerald-100: #24301a;
+  --color-emerald-200: #3b5230;
+  --color-emerald-300: #5b7a46;
+  --color-emerald-400: #4a6538;
+  --color-emerald-500: #3e5630;
+  --color-emerald-950: #f6f3ea;
+  --color-sky-100: #1b2b34;
+  --color-sky-200: #2f4b58;
+  --color-sky-300: #4c7183;
+  --color-sky-400: #3f6070;
+  --color-sky-500: #33505e;
+  --color-sky-950: #f2f5f6;
+  --color-rose-100: #3a1710;
+  --color-rose-200: #7a3e2c;
+  --color-rose-300: #a3614a;
+  --color-rose-400: #8f4f38;
+  --color-rose-500: #7a4029;
+  --color-rose-950: #f9f2ee;
+  --color-amber-100: #38270a;
+  --color-amber-200: #6f5116;
+  --color-amber-300: #9a7526;
+  --color-amber-400: #866420;
+  --color-amber-500: #6f521a;
+  --color-amber-950: #f9f5ea;
+  --color-violet-100: #241a2e;
+  --color-violet-200: #4e3f5e;
+  --color-violet-300: #7a6690;
+  --color-violet-400: #665478;
+  --color-violet-500: #554565;
+  --color-violet-950: #f5f2f7;
+  --color-slate-400: #7b7266;
+  --color-slate-500: #6b6357;
+  --color-slate-950: #f6f3ec;
+}
+
+/* Ink printed on the light solid fills of the dark theme. */
+:root {
+  --color-emerald-950: #16200e;
+  --color-sky-950: #101d24;
+  --color-rose-950: #2a1009;
+  --color-amber-950: #2a1e08;
+  --color-violet-950: #1d1524;
+
+  /* The few remaining neutral utilities (status chips, button ink). */
+  --color-slate-400: #a99e8e;
+  --color-slate-500: #8a8073;
+  --color-slate-950: #191510;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: Arial, Helvetica, sans-serif;
+  --color-app: var(--app);
+  --color-surface: var(--surface);
+  --color-surface-strong: var(--surface-strong);
+  --color-card: var(--card);
+  --color-card-soft: var(--card-soft);
+  --color-card-strong: var(--card-strong);
+  --color-field: var(--field);
+  --color-hover: var(--hover);
+  --color-scrim: var(--scrim);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-ink: var(--ink);
+  --color-body: var(--body);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+
+  --font-sans: -apple-system, BlinkMacSystemFont, "Pretendard Variable",
+    Pretendard, "Apple SD Gothic Neo", "Noto Sans KR", "Segoe UI", system-ui,
+    sans-serif;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--app);
+  color: var(--body);
+  font-family: var(--font-sans);
   min-width: 320px;
+  letter-spacing: -0.01em;
 }
 
 button,
@@ -31,14 +184,15 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* Date pickers render their own chrome, which needs the active theme. */
 input[type="date"],
 input[type="month"] {
-  color-scheme: dark;
+  color-scheme: inherit;
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 9px;
+  height: 9px;
 }
 
 ::-webkit-scrollbar-track {
@@ -46,10 +200,50 @@ input[type="month"] {
 }
 
 ::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
   border-radius: 999px;
-  background: rgba(148, 163, 184, 0.22);
+  background-clip: content-box;
+  background-color: var(--line-strong);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.36);
+  background-color: var(--muted);
+}
+
+/* Cards float a little in the light theme; the dark theme keeps them flat. */
+:root[data-theme="light"] .bg-card,
+:root[data-theme="light"] .bg-card-strong,
+:root[data-theme="light"] .bg-surface {
+  box-shadow: 0 10px 30px -24px rgba(76, 55, 110, 0.55);
+}
+
+/* Soft pastel glow behind the whole workspace. */
+.app-glow::before {
+  content: "";
+  position: fixed;
+  inset: -20% -10% auto -10%;
+  height: 70vh;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(38rem 24rem at 12% 0%, var(--app-glow-a), transparent 70%),
+    radial-gradient(34rem 22rem at 78% 6%, var(--app-glow-b), transparent 70%),
+    radial-gradient(26rem 18rem at 48% 18%, var(--app-glow-c), transparent 72%);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .pop-in {
+    animation: pop-in 0.22s ease-out;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }

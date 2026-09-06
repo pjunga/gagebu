@@ -18,12 +18,19 @@ import {
   signOut,
   type User,
 } from "firebase/auth";
+import ThemeToggle from "./theme-toggle";
 import {
   allowedGoogleEmail,
   auth,
   isAllowedFirebaseUser,
   isFirebaseConfigured,
 } from "@/lib/firebase";
+
+// Dev-only escape hatch: skips the Google gate so the dashboard can be opened
+// without Firebase credentials. Never true in a production build.
+const devAuthBypass =
+  process.env.NODE_ENV !== "production" &&
+  process.env.NEXT_PUBLIC_DEV_AUTH_BYPASS === "1";
 
 type AuthState =
   | { status: "loading" }
@@ -38,12 +45,12 @@ export function AuthAccountControls() {
   if (!user) return null;
 
   return (
-    <div className="flex min-w-0 shrink-0 items-center gap-2 rounded-xl border border-white/10 bg-slate-950/85 px-2.5 py-1.5 text-xs text-slate-300 shadow-xl backdrop-blur">
+    <div className="flex min-w-0 shrink-0 items-center gap-2 rounded-2xl border border-line bg-card px-2.5 py-1.5 text-xs text-body backdrop-blur">
       <span className="hidden max-w-40 truncate 2xl:inline">{user.email}</span>
       <button
         type="button"
         onClick={() => auth && void signOut(auth)}
-        className="shrink-0 rounded-lg border border-white/10 px-2.5 py-1.5 text-slate-200 transition hover:border-white/20 hover:bg-white/10"
+        className="shrink-0 rounded-xl border border-line px-2.5 py-1.5 text-body transition hover:border-line-strong hover:bg-hover"
       >
         로그아웃
       </button>
@@ -158,6 +165,10 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     }
   };
 
+  if (devAuthBypass) {
+    return <>{children}</>;
+  }
+
   if (state.status === "allowed") {
     return (
       <AuthenticatedUserContext.Provider value={state.user}>
@@ -170,24 +181,27 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   const missingAllowlist = !allowedGoogleEmail;
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 px-5 text-slate-50">
-      <section className="w-full max-w-md rounded-3xl border border-white/10 bg-white/[0.055] p-8 shadow-2xl shadow-black/30 backdrop-blur">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
-          Private access
-        </p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-tight">내 가계부</h1>
-        <p className="mt-3 text-sm leading-6 text-slate-400">
+    <main className="app-glow relative flex min-h-screen items-center justify-center bg-app px-5 text-ink">
+      <section className="pop-in relative z-10 w-full max-w-md rounded-3xl border border-line bg-card p-8 shadow-2xl shadow-black/10 backdrop-blur">
+        <div className="flex items-start justify-between gap-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-300">
+            Private access
+          </p>
+          <ThemeToggle />
+        </div>
+        <h1 className="mt-3 text-3xl font-semibold tracking-tight text-ink">내 가계부 ✿</h1>
+        <p className="mt-3 text-sm leading-6 text-muted">
           등록된 Google 계정으로 로그인해야 가계부를 열 수 있습니다.
         </p>
 
         {state.status === "loading" ? (
-          <div className="mt-8 h-12 animate-pulse rounded-xl bg-white/10" />
+          <div className="mt-8 h-12 animate-pulse rounded-2xl bg-hover" />
         ) : (
           <button
             type="button"
             disabled={signingIn || missingFirebase || missingAllowlist}
             onClick={() => void handleGoogleSignIn()}
-            className="mt-8 flex h-12 w-full items-center justify-center gap-3 rounded-xl bg-white px-4 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-8 flex h-12 w-full items-center justify-center gap-3 rounded-2xl bg-[#ffffff] px-4 text-sm font-semibold text-[#1f2937] shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:bg-[#f4f4f5] disabled:cursor-not-allowed disabled:opacity-50"
           >
             <span aria-hidden="true" className="text-lg font-bold text-blue-600">G</span>
             {signingIn ? "로그인 중..." : "Google 계정으로 로그인"}
@@ -195,14 +209,14 @@ export default function AuthGate({ children }: { children: ReactNode }) {
         )}
 
         {(missingFirebase || missingAllowlist) && (
-          <p className="mt-4 rounded-xl border border-amber-400/20 bg-amber-400/10 px-3 py-2.5 text-xs leading-5 text-amber-200">
+          <p className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-400/10 px-3 py-2.5 text-xs leading-5 text-amber-200">
             {missingFirebase
               ? "Firebase 환경변수 설정이 필요합니다."
               : "허용할 Google 이메일 환경변수 설정이 필요합니다."}
           </p>
         )}
         {state.status === "signed-out" && state.message && (
-          <p role="alert" className="mt-4 rounded-xl border border-rose-400/20 bg-rose-400/10 px-3 py-2.5 text-xs leading-5 text-rose-200">
+          <p role="alert" className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-400/10 px-3 py-2.5 text-xs leading-5 text-rose-200">
             {state.message}
           </p>
         )}
