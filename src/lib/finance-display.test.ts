@@ -87,3 +87,9 @@ test("previousMonthOf steps the month without a timezone shift", () => {
   assert.equal(previousMonthOf("2026-12"), "2026-11");
   assert.equal(previousMonthOf("nonsense"), "nonsense");
 });
+
+test("formatMoney survives a currency code Intl cannot parse", () => {
+  assert.equal(formatMoney(1217.5, "US$"), "US$ 1,217.5");
+  assert.equal(formatMoney(1000, 0 as unknown as string), "₩1,000");
+  assert.equal(formatMoney(1000, "   "), "₩1,000");
+});

@@ -55,6 +55,7 @@ export type FinanceRecord = {
   note?: string;
   assetType?: SavingsAssetType;
   monthlyContribution?: number;
+  principal?: number;
   balance?: number;
   principalOrBalance?: number;
   payMonth?: string;
@@ -217,7 +218,7 @@ const defaultDraft = (kind: EntryKind = "expense"): EntryDraft => ({
 const recordToDraft = (record: FinanceRecord): EntryDraft => ({
   kind: record.kind,
   title: record.title,
-  amount: String(record.amount),
+  amount: String(record.principal ?? record.amount),
   date: record.date,
   category: record.category ?? expenseCategories[0],
   source: record.source ?? "",
@@ -919,7 +920,7 @@ function DetailModal({
     record.quantity ? ["수량", `${record.quantity.toLocaleString("ko-KR")}주`] : null,
     record.unitPrice ? ["주문 단가", currency(record.unitPrice, record.currency)] : null,
     record.side ? ["주문 구분", record.side === "buy" ? "매수" : "매도"] : null,
-    record.status && assetStatusLabels[record.status as AssetStatus]
+    record.kind !== "stock-order" && record.status && assetStatusLabels[record.status as AssetStatus]
       ? ["상태", assetStatusLabels[record.status as AssetStatus]]
       : null,
   ].filter(Boolean) as string[][];
@@ -1173,7 +1174,7 @@ function OverviewPanel({
   const previousNet = sumIncome(previousRecords) - sumExpense(previousRecords);
   const netChange = income - expense - previousNet;
   const assets = records.filter((record) => ["savings", "stock-order"].includes(record.kind));
-  const netAssets = assets.reduce((sum, record) => sum + record.amount, 0);
+  const netAssets = totalByCurrency(assets).base;
   const categoryTotals = monthRecords.filter((record) => record.kind === "expense").reduce<Record<string, number>>((result, record) => {
     const category = record.category || "기타";
     result[category] = (result[category] || 0) + record.amount;
@@ -1190,7 +1191,7 @@ function OverviewPanel({
         {loading ? <><LoadingCard /><LoadingCard /><LoadingCard /><LoadingCard /></> : <>
           <StatCard label={`${monthText(month)} 수입`} value={compactCurrency(income)} subtext={`${currency(income)} · 전월 대비 확인`} tone="emerald" icon="arrow-up" onClick={() => onNavigate("transactions")} />
           <StatCard label={`${monthText(month)} 지출`} value={compactCurrency(expense)} subtext={`${currency(expense)} · 카테고리별 보기`} tone="rose" icon="arrow-down" onClick={() => onNavigate("transactions")} />
-          <StatCard label="전월 대비" value={`${netChange >= 0 ? "+" : "−"}${currency(Math.abs(netChange))}`} subtext={`${monthText(previousMonth)} 순현금 ${currency(previousNet)}`} tone={netChange >= 0 ? "sky" : "rose"} icon="wallet" />
+          <StatCard label="전월 대비" value={previousRecords.length ? `${netChange >= 0 ? "+" : "−"}${compactCurrency(Math.abs(netChange))}` : "—"} subtext={previousRecords.length ? `${netChange >= 0 ? "+" : "−"}${currency(Math.abs(netChange))} · ${monthText(previousMonth)} 순현금 ${currency(previousNet)}` : `${monthText(previousMonth)} 기록 없음`} tone={previousRecords.length && netChange < 0 ? "rose" : "sky"} icon="wallet" />
           <StatCard label="순자산 기록" value={compactCurrency(netAssets)} subtext={`${assets.length}개 자산 기록`} tone="violet" icon="pie-chart" onClick={() => onNavigate("assets")} />
         </>}
       </div>
@@ -1272,14 +1273,14 @@ function TransactionsPanel({
   const expense = visible.filter((record) => record.kind === "expense").reduce((sum, record) => sum + record.amount, 0);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <div className="rounded-3xl border border-emerald-400/15 bg-emerald-500/[0.05] px-4 py-3"><p className="text-xs text-emerald-200/70">조회 기간 수입</p><p className="mt-1.5 text-lg font-semibold tabular-nums text-emerald-100">{currency(income)}</p></div>
-        <div className="rounded-3xl border border-rose-400/15 bg-rose-500/[0.05] px-4 py-3"><p className="text-xs text-rose-200/70">조회 기간 지출</p><p className="mt-1.5 text-lg font-semibold tabular-nums text-rose-100">{currency(expense)}</p></div>
-        <div className="rounded-3xl border border-line bg-card px-4 py-3"><p className="text-xs text-faint">순현금 흐름</p><p className={`mt-1.5 text-lg font-semibold tabular-nums ${income >= expense ? "text-sky-100" : "text-rose-100"}`}>{income >= expense ? "+" : "−"}{currency(Math.abs(income - expense))}</p></div>
+        <div className="rounded-3xl border border-emerald-400/15 bg-emerald-500/[0.05] px-4 py-2"><p className="text-xs text-emerald-200/70">조회 기간 수입</p><p className="mt-1 text-base font-semibold tabular-nums text-emerald-100">{currency(income)}</p></div>
+        <div className="rounded-3xl border border-rose-400/15 bg-rose-500/[0.05] px-4 py-2"><p className="text-xs text-rose-200/70">조회 기간 지출</p><p className="mt-1 text-base font-semibold tabular-nums text-rose-100">{currency(expense)}</p></div>
+        <div className="rounded-3xl border border-line bg-card px-4 py-2"><p className="text-xs text-faint">순현금 흐름</p><p className={`mt-1 text-base font-semibold tabular-nums ${income >= expense ? "text-sky-100" : "text-rose-100"}`}>{income >= expense ? "+" : "−"}{currency(Math.abs(income - expense))}</p></div>
       </div>
       <section className="rounded-3xl border border-line bg-card">
-        <div className="flex flex-col gap-3 border-b border-line p-4 sm:px-5 sm:py-4">
+        <div className="flex flex-col gap-3 border-b border-line p-4 sm:px-5 sm:py-3">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex items-center gap-1 rounded-2xl bg-card-strong p-1" role="group" aria-label="조회 범위">
               <button type="button" onClick={() => setRange("month")} aria-pressed={range === "month"} className={`rounded-xl px-3 py-2 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 ${range === "month" ? "bg-emerald-400/20 text-ink shadow-sm text-ink" : "text-faint hover:text-ink"}`}>월별</button>
@@ -1292,16 +1293,16 @@ function TransactionsPanel({
             </div>
           </div>
           <div className="flex flex-col gap-2 md:flex-row md:items-center">
-            <label className="relative flex-1"><span className="sr-only">내역 검색</span><Icon name="search" size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="내역, 카테고리, 출처 검색" className="h-10 w-full rounded-2xl border border-line bg-field pl-9 pr-3 text-xs text-body outline-none placeholder:text-faint focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15" /></label>
+            <label className="relative flex-1"><span className="sr-only">내역 검색</span><Icon name="search" size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-faint" /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="내역, 카테고리, 출처 검색" className="h-9 w-full rounded-2xl border border-line bg-field pl-9 pr-3 text-xs text-body outline-none placeholder:text-faint focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15" /></label>
             <div className="flex gap-2"><SelectField compact id="transaction-kind" label="유형" value={kind === "all" ? "전체 유형" : entryLabels[kind]} onChange={(value) => setKind(value === "전체 유형" ? "all" : (Object.keys(entryLabels) as EntryKind[]).find((entryKind) => entryLabels[entryKind] === value) || "all")} options={["전체 유형", ...transactionKinds.map((entryKind) => entryLabels[entryKind])]} /><SelectField compact id="transaction-source" label="출처" value={source} onChange={setSource} options={sourceOptions} /></div>
           </div>
         </div>
         <div className="hidden overflow-x-auto md:block">
-          <table className="w-full min-w-[680px] text-left text-sm"><caption className="sr-only">수입·지출 내역</caption><thead className="border-b border-line text-[11px] text-faint"><tr><th scope="col" className="px-5 py-3 font-medium">날짜</th><th scope="col" className="px-3 py-3 font-medium">유형</th><th scope="col" className="px-3 py-3 font-medium">내역</th><th scope="col" className="px-3 py-3 font-medium">출처·수단</th><th scope="col" className="px-3 py-3 text-right font-medium">금액</th><th scope="col" className="px-5 py-3 text-right font-medium">상세</th></tr></thead><tbody className="divide-y divide-line">{visible.map((record) => <tr key={record.id} className="group transition hover:bg-card-soft"><td className="whitespace-nowrap px-5 py-2.5 text-xs tabular-nums text-faint">{dateText(record.date)}</td><td className="px-3 py-2.5"><KindBadge kind={record.kind} /></td><td className="px-3 py-2.5"><p className="font-medium text-body">{record.title}</p>{categorySubLabel(entryLabels[record.kind], record.category) && <p className="mt-0.5 text-xs text-faint">{categorySubLabel(entryLabels[record.kind], record.category)}</p>}</td><td className="px-3 py-2.5 text-xs text-muted">{record.source || record.account || "—"}</td><td className={`whitespace-nowrap px-3 py-2.5 text-right font-semibold tabular-nums ${record.kind === "expense" ? "text-rose-200" : "text-emerald-200"}`}>{record.kind === "expense" ? "−" : "+"}{currency(record.amount)}</td><td className="px-5 py-2.5 text-right"><button type="button" onClick={() => onOpenDetail(record)} className="rounded-xl p-2 text-faint opacity-70 transition hover:bg-card-strong hover:text-ink focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300" aria-label={`${record.title} 상세 보기`}><Icon name="more" size={17} /></button></td></tr>)}</tbody></table>
+          <table className="w-full min-w-[680px] text-left text-sm"><caption className="sr-only">수입·지출 내역</caption><thead className="border-b border-line text-[11px] text-faint"><tr><th scope="col" className="px-5 py-2.5 font-medium">날짜</th><th scope="col" className="px-3 py-2.5 font-medium">유형</th><th scope="col" className="px-3 py-2.5 font-medium">내역</th><th scope="col" className="px-3 py-2.5 font-medium">출처·수단</th><th scope="col" className="px-3 py-2.5 text-right font-medium">금액</th><th scope="col" className="px-5 py-2.5 text-right font-medium">상세</th></tr></thead><tbody className="divide-y divide-line">{visible.map((record) => <tr key={record.id} className="group transition hover:bg-card-soft"><td className="whitespace-nowrap px-5 py-2 text-xs tabular-nums text-faint">{dateText(record.date)}</td><td className="px-3 py-2"><KindBadge kind={record.kind} /></td><td className="px-3 py-2"><p className="font-medium text-body">{record.title}</p>{categorySubLabel(entryLabels[record.kind], record.category) && <p className="mt-0.5 text-xs text-faint">{categorySubLabel(entryLabels[record.kind], record.category)}</p>}</td><td className="px-3 py-2 text-xs text-muted">{record.source || record.account || "—"}</td><td className={`whitespace-nowrap px-3 py-2 text-right font-semibold tabular-nums ${record.kind === "expense" ? "text-rose-200" : "text-emerald-200"}`}>{record.kind === "expense" ? "−" : "+"}{currency(record.amount)}</td><td className="px-5 py-2 text-right"><button type="button" onClick={() => onOpenDetail(record)} className="rounded-xl p-2 text-faint opacity-70 transition hover:bg-card-strong hover:text-ink focus:opacity-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300" aria-label={`${record.title} 상세 보기`}><Icon name="more" size={17} /></button></td></tr>)}</tbody></table>
         </div>
         <div className="divide-y divide-line md:hidden">{visible.map((record) => <button type="button" key={record.id} onClick={() => onOpenDetail(record)} className="flex w-full items-start gap-3 px-4 py-4 text-left transition hover:bg-card focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-emerald-300"><span className={`mt-0.5 flex h-9 w-9 items-center justify-center rounded-2xl ${toneClasses(entryTones[record.kind], true)}`}><Icon name={entryIcons[record.kind]} size={16} /></span><span className="min-w-0 flex-1"><span className="flex items-center justify-between gap-3"><span className="truncate text-sm font-medium text-body">{record.title}</span><span className={`shrink-0 text-sm font-semibold tabular-nums ${record.kind === "expense" ? "text-rose-200" : "text-emerald-200"}`}>{record.kind === "expense" ? "−" : "+"}{currency(record.amount)}</span></span><span className="mt-1 block text-[11px] text-faint">{dateText(record.date)} · {entryLabels[record.kind]}{categorySubLabel(entryLabels[record.kind], record.category) ? ` · ${categorySubLabel(entryLabels[record.kind], record.category)}` : ""}</span></span></button>)}</div>
         {!visible.length && <div className="p-4 sm:p-5"><EmptyState icon="search" title="조건에 맞는 내역이 없습니다" description="조회 기간이나 필터를 바꾸거나, 새 내역을 추가해보세요." action={<button type="button" onClick={() => onAdd("expense")} className="rounded-2xl bg-emerald-400 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200">내역 추가</button>} /></div>}
-        <div className="border-t border-line px-4 py-3 text-[11px] text-faint sm:px-5">총 {visible.length}건 · 금액은 원화 기준으로 표시됩니다.</div>
+        <div className="border-t border-line px-4 py-2 text-[11px] text-faint sm:px-5">총 {visible.length}건 · 금액은 원화 기준으로 표시됩니다.</div>
       </section>
     </div>
   );
@@ -1329,17 +1330,19 @@ function AssetsPanel({
     if (status !== "전체 상태" && record.status !== status) return false;
     return true;
   });
+  const visibleTotals = totalByCurrency(visible);
   const savings = totalByCurrency(visible.filter((record) => record.kind === "savings")).base;
   const stockTotals = totalByCurrency(visible.filter((record) => record.kind === "stock-order"));
   const stocks = stockTotals.base;
-  const foreignNote = stockTotals.foreign.length
-    ? `${stockTotals.foreign.map((entry) => `${entry.code} ${entry.count}건`).join(" · ")} 별도`
-    : "";
+  const foreignNote = (foreign: typeof visibleTotals.foreign) =>
+    foreign.length ? `${foreign.map((entry) => `${entry.code} ${entry.count}건`).join(" · ")} 별도` : "";
+  const totalNote = foreignNote(visibleTotals.foreign);
+  const stockNote = foreignNote(stockTotals.foreign);
   const maturities = assets.filter((record) => record.kind === "savings" && record.maturityDate && record.status !== "closed").sort((left, right) => (left.maturityDate || "").localeCompare(right.maturityDate || ""));
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3"><div className="rounded-3xl border border-sky-400/15 bg-sky-500/[0.05] p-4"><p className="text-xs text-sky-200/70">기록된 자산</p><p className="mt-2 text-xl font-semibold tabular-nums text-sky-100">{currency(savings + stocks)}</p>{foreignNote && <p className="mt-1 text-[11px] text-sky-200/70">{foreignNote}</p>}</div><div className="rounded-3xl border border-emerald-400/15 bg-emerald-500/[0.05] p-4"><p className="text-xs text-emerald-200/70">예금·적금</p><p className="mt-2 text-xl font-semibold tabular-nums text-emerald-100">{currency(savings)}</p></div><div className="rounded-3xl border border-violet-400/15 bg-violet-500/[0.05] p-4"><p className="text-xs text-violet-200/70">주식 주문 누적</p><p className="mt-2 text-xl font-semibold tabular-nums text-violet-100">{currency(stocks)}</p>{foreignNote && <p className="mt-1 text-[11px] text-violet-200/70">{foreignNote}</p>}</div></div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3"><div className="rounded-3xl border border-sky-400/15 bg-sky-500/[0.05] p-4"><p className="text-xs text-sky-200/70">기록된 자산</p><p className="mt-2 text-xl font-semibold tabular-nums text-sky-100">{currency(visibleTotals.base)}</p>{totalNote && <p className="mt-1 text-[11px] text-sky-200/70">{totalNote}</p>}</div><div className="rounded-3xl border border-emerald-400/15 bg-emerald-500/[0.05] p-4"><p className="text-xs text-emerald-200/70">예금·적금</p><p className="mt-2 text-xl font-semibold tabular-nums text-emerald-100">{currency(savings)}</p></div><div className="rounded-3xl border border-violet-400/15 bg-violet-500/[0.05] p-4"><p className="text-xs text-violet-200/70">주식 주문 누적</p><p className="mt-2 text-xl font-semibold tabular-nums text-violet-100">{currency(stocks)}</p>{stockNote && <p className="mt-1 text-[11px] text-violet-200/70">{stockNote}</p>}</div></div>
       <section className="rounded-3xl border border-line bg-card">
         <div className="flex flex-col gap-4 border-b border-line p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-faint">Portfolio</p><h2 className="mt-1 text-lg font-semibold text-ink">자산 목록</h2></div><div className="flex flex-wrap gap-2"><select aria-label="자산 연도" value={year} onChange={(event) => setYear(event.target.value)} className="h-9 rounded-xl border border-line bg-field px-3 text-xs text-body outline-none focus:border-sky-400/60 focus:ring-2 focus:ring-sky-400/15"><option>{year}</option><option>{String(Number(year) - 1)}</option><option>{String(Number(year) + 1)}</option></select><button type="button" onClick={() => onAdd("savings")} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-sky-400 px-3 text-xs font-semibold text-slate-950 transition hover:bg-sky-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"><Icon name="plus" size={14} /> 자산 추가</button></div></div><div className="flex flex-wrap items-center gap-2"><SelectField compact="sm" id="asset-institution" label="기관" value={institution} onChange={setInstitution} options={institutionOptions} /><SelectField compact="sm" id="asset-status" label="상태" value={status === "전체 상태" ? "전체 상태" : assetStatusLabels[status as AssetStatus]} onChange={(value) => setStatus(value === "전체 상태" ? "전체 상태" : (Object.keys(assetStatusLabels) as AssetStatus[]).find((assetStatus) => assetStatusLabels[assetStatus] === value) || "전체 상태")} options={["전체 상태", ...Object.values(assetStatusLabels)]} /></div></div>
         <div className="divide-y divide-line">{visible.map((record) => <button type="button" key={record.id} onClick={() => onOpenDetail(record)} className="flex w-full items-center gap-3 px-4 py-4 text-left transition hover:bg-card-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 sm:px-5"><span className={`flex h-10 w-10 items-center justify-center rounded-3xl ${toneClasses(entryTones[record.kind], true)}`}><Icon name={entryIcons[record.kind]} size={17} /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-body">{record.title}</span><span className="mt-1 block truncate text-xs text-faint">{record.institution || "기관 미입력"} · {record.account || record.ticker || entryLabels[record.kind]}</span></span><span className="hidden sm:block">{record.kind === "stock-order" ? record.side && <SideBadge side={record.side} /> : <StatusBadge status={record.status} />}</span><span className="text-right"><span className="block text-sm font-semibold tabular-nums text-ink">{currency(record.amount, record.currency)}</span><span className="mt-1 block text-[11px] text-faint">{record.maturityDate ? `만기 ${dateText(record.maturityDate)}` : dateText(record.date)}</span></span></button>)}{!visible.length && <div className="p-4 sm:p-5"><EmptyState icon="pie-chart" title="조건에 맞는 자산이 없습니다" description="자산 기록을 추가하거나 필터를 조정해보세요." action={<button type="button" onClick={() => onAdd("savings")} className="rounded-2xl bg-sky-400 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200">자산 추가</button>} /></div>}</div>
@@ -1610,6 +1613,10 @@ export default function GagebuDashboard() {
       institution: account.institution,
       account: account.accountName,
       maturityDate: account.maturityDate,
+      assetType: account.assetType,
+      monthlyContribution: account.monthlyContribution,
+      principal: account.principal,
+      balance: account.balance,
       status: account.maturityDate && account.maturityDate <= addMonths(currentDate(), 1) ? "maturity-soon" : "active",
       note: account.memo,
     }));
@@ -1624,7 +1631,9 @@ export default function GagebuDashboard() {
       side: order.side,
       quantity: order.quantity,
       unitPrice: order.unitPrice,
+      principalOrBalance: order.principalOrBalance,
       currency: order.currency,
+      status: "active",
       note: order.memo,
     }));
     return [...transactionRecords, ...savingsRecords, ...stockRecords].sort((left, right) => right.date.localeCompare(left.date));
@@ -1665,20 +1674,27 @@ export default function GagebuDashboard() {
     setError("");
     try {
       if (draft.kind === "savings") {
+        // Same as the stock branch: the local repository replaces the stored item
+        // wholesale, so spread the existing account before the form's own fields.
         await repositories.savingsAccounts.upsert({
+          ...savingsAccounts.find((account) => account.id === id),
           id,
           source: "manual",
           institution: draft.institution.trim() || "기관 미입력",
           accountName: draft.account.trim() || draft.title.trim() || "예금·적금",
-          assetType: "deposit",
+          assetType: draft.assetType,
           principal: amount,
-          balance: amount,
+          balance: draft.balance ? Number(draft.balance) : amount,
+          monthlyContribution: draft.monthlyContribution ? Number(draft.monthlyContribution) : undefined,
           startDate: draft.date,
           maturityDate: draft.maturityDate || undefined,
           memo: draft.note.trim() || undefined,
         });
       } else if (draft.kind === "stock-order") {
+        // The form does not own every stock-order field (currency, fee), and the
+        // local repository replaces the stored item wholesale, so keep the rest.
         await repositories.stockOrders.upsert({
+          ...stockOrders.find((order) => order.id === id),
           id,
           source: "manual",
           broker: draft.institution.trim() || undefined,
@@ -1688,6 +1704,7 @@ export default function GagebuDashboard() {
           quantity: Number(draft.quantity),
           unitPrice: Number(draft.unitPrice),
           totalAmount: amount,
+          principalOrBalance: draft.principalOrBalance ? Number(draft.principalOrBalance) : undefined,
           orderDate: draft.date,
           memo: draft.note.trim() || undefined,
         });
@@ -1923,8 +1940,8 @@ export default function GagebuDashboard() {
           </nav>
         </header>
 
-        <main className="mx-auto max-w-[1440px] px-4 pb-12 pt-5 sm:px-7 sm:pt-7 xl:px-10">
-          <div className="mb-5 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm text-faint">{activeView === "overview" ? "오늘의 금융 흐름을 가볍게 확인해보세요." : activeNav.description}</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{activeNav.label}</h2></div><div className="flex items-center gap-2 sm:hidden"><label className="flex flex-1 items-center gap-2 rounded-2xl border border-line bg-card px-3 py-2.5"><Icon name="calendar" size={15} className="text-faint" /><span className="sr-only">기준 월</span><input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} className="w-full bg-transparent text-xs text-body outline-none" /></label><button type="button" onClick={() => setImportOpen(true)} aria-label="엑셀 가져오기" className="flex h-10 w-10 items-center justify-center rounded-2xl border border-sky-400/20 text-sky-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="upload" size={16} /></button></div></div>
+        <main className="mx-auto max-w-[1440px] px-4 pb-8 pt-4 sm:px-7 sm:pt-5 xl:px-10">
+          <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm text-faint">{activeView === "overview" ? "오늘의 금융 흐름을 가볍게 확인해보세요." : activeNav.description}</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{activeNav.label}</h2></div><div className="flex items-center gap-2 sm:hidden"><label className="flex flex-1 items-center gap-2 rounded-2xl border border-line bg-card px-3 py-2.5"><Icon name="calendar" size={15} className="text-faint" /><span className="sr-only">기준 월</span><input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} className="w-full bg-transparent text-xs text-body outline-none" /></label><button type="button" onClick={() => setImportOpen(true)} aria-label="엑셀 가져오기" className="flex h-10 w-10 items-center justify-center rounded-2xl border border-sky-400/20 text-sky-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="upload" size={16} /></button></div></div>
           {error && <div role="alert" className="mb-5 flex items-start gap-3 rounded-3xl border border-rose-400/20 bg-rose-500/[0.07] px-4 py-3 text-sm text-rose-100"><Icon name="info" size={17} className="mt-0.5 text-rose-200" /><div className="flex-1"><p className="font-medium">데이터를 불러오는 중 문제가 생겼습니다.</p><p className="mt-1 text-xs text-rose-100/70">{error}</p></div><button type="button" onClick={() => setError("")} aria-label="오류 닫기" className="rounded-xl p-1 text-rose-200/70 hover:bg-rose-500/10 hover:text-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"><Icon name="close" size={15} /></button></div>}
           {activeView === "overview" && <OverviewPanel records={records} tasks={workItems} month={selectedMonth} loading={loading} onNavigate={setActiveView} onAdd={openAdd} onOpenImport={() => setImportOpen(true)} onOpenDetail={setDetailRecord} />}
           {activeView === "transactions" && <TransactionsPanel records={records} month={selectedMonth} setMonth={setSelectedMonth} year={selectedYear} setYear={setSelectedYear} onAdd={openAdd} onOpenDetail={setDetailRecord} onOpenImport={() => setImportOpen(true)} />}

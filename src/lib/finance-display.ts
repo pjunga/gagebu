@@ -29,9 +29,17 @@ export function relativeDay(dateValue: string, today: string): string {
 
 export const DEFAULT_CURRENCY = "KRW";
 
+/**
+ * Stored records reach us from imports and older documents, so a currency can be
+ * missing, blank, or not a string at all. Everything here goes through this.
+ */
+function normalizeCurrency(currencyCode: unknown): string {
+  return typeof currencyCode === "string" ? currencyCode.trim().toUpperCase() : "";
+}
+
 /** Formats an amount in its own currency; never converts between currencies. */
-export function formatMoney(amount: number, currencyCode = DEFAULT_CURRENCY): string {
-  const code = currencyCode.trim().toUpperCase() || DEFAULT_CURRENCY;
+export function formatMoney(amount: number, currencyCode: unknown = DEFAULT_CURRENCY): string {
+  const code = normalizeCurrency(currencyCode) || DEFAULT_CURRENCY;
   if (code === DEFAULT_CURRENCY) {
     return new Intl.NumberFormat("ko-KR", {
       style: "currency",
@@ -39,11 +47,18 @@ export function formatMoney(amount: number, currencyCode = DEFAULT_CURRENCY): st
       maximumFractionDigits: 0,
     }).format(amount);
   }
-  return new Intl.NumberFormat("en-US", { style: "currency", currency: code }).format(amount);
+  try {
+    return new Intl.NumberFormat("en-US", { style: "currency", currency: code }).format(amount);
+  } catch {
+    // Intl throws on anything that is not a well-formed ISO 4217 code, and one
+    // bad record must not take the whole dashboard down.
+    return `${code} ${new Intl.NumberFormat("en-US").format(amount)}`;
+  }
 }
 
-export function isForeignCurrency(currencyCode?: string): boolean {
-  return Boolean(currencyCode) && currencyCode!.trim().toUpperCase() !== DEFAULT_CURRENCY;
+export function isForeignCurrency(currencyCode?: unknown): boolean {
+  const code = normalizeCurrency(currencyCode);
+  return Boolean(code) && code !== DEFAULT_CURRENCY;
 }
 
 /**
@@ -60,7 +75,7 @@ export function totalByCurrency<T extends { amount: number; currency?: string }>
       base += record.amount;
       continue;
     }
-    const code = record.currency!.trim().toUpperCase();
+    const code = normalizeCurrency(record.currency);
     const entry = foreign.get(code) ?? { code, count: 0, total: 0 };
     entry.count += 1;
     entry.total += record.amount;
