@@ -2,12 +2,15 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Replace the email below with the same address configured in
+    // Keep this list in sync with the comma-separated
     // NEXT_PUBLIC_ALLOWED_GOOGLE_EMAIL before deploying these rules.
     function isAllowedGoogleUser() {
       return request.auth != null
         && request.auth.token.firebase.sign_in_provider == "google.com"
-        && request.auth.token.email == "pjunga0730@gmail.com";
+        && request.auth.token.email in [
+          "pjunga0730@gmail.com",
+          "chihoyoon1217@gmail.com"
+        ];
     }
 
     function isOwner(userId) {

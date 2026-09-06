@@ -27,13 +27,17 @@ const app = isFirebaseConfigured
 export const auth = app ? getAuth(app) : null;
 export const db = app ? getFirestore(app) : null;
 
-export const allowedGoogleEmail =
-  process.env.NEXT_PUBLIC_ALLOWED_GOOGLE_EMAIL?.trim().toLowerCase() ?? "";
+/** Comma-separated NEXT_PUBLIC_ALLOWED_GOOGLE_EMAIL. Keep firestore.rules in sync. */
+export const allowedGoogleEmails = (process.env.NEXT_PUBLIC_ALLOWED_GOOGLE_EMAIL ?? "")
+  .split(",")
+  .map((email) => email.trim().toLowerCase())
+  .filter(Boolean);
 
 export function isAllowedFirebaseUser(user: User | null): boolean {
-  if (!user || !allowedGoogleEmail) return false;
+  if (!user || !allowedGoogleEmails.length) return false;
   const usesGoogle = user.providerData.some(
     (provider) => provider.providerId === "google.com",
   );
-  return usesGoogle && user.email?.trim().toLowerCase() === allowedGoogleEmail;
+  const email = user.email?.trim().toLowerCase() ?? "";
+  return usesGoogle && allowedGoogleEmails.includes(email);
 }

@@ -21,8 +21,8 @@ pnpm test     # node:test 기반 도메인·임포트 테스트
 1. Firebase Console에서 프로젝트와 Web App을 만듭니다.
 2. Authentication의 로그인 제공업체에서 Google을 활성화합니다.
 3. Firestore Database를 생성합니다.
-4. `.env.local.example`을 `.env.local`로 복사하고 Web App 설정값 및 본인 Google 이메일을 입력합니다.
-5. `firestore.rules`의 허용 이메일도 같은 Google 이메일로 바꿉니다.
+4. `.env.local.example`을 `.env.local`로 복사하고 Web App 설정값과 허용할 Google 이메일을 입력합니다. 여러 명이면 쉼표로 구분합니다.
+5. `firestore.rules`의 허용 이메일 목록도 같은 주소들로 맞춥니다.
 6. Firebase CLI로 `firestore.rules`를 배포합니다.
 
 ```bash
