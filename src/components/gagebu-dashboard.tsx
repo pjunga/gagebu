@@ -397,6 +397,17 @@ function useDialogFocus(open: boolean, onClose: () => void) {
       }
       const first = focusable[0];
       const last = focusable[focusable.length - 1];
+      const active = document.activeElement;
+      if (active && !dialog.contains(active)) {
+        // Another dialog stacked on top owns the focus; leave it alone, or two
+        // traps fight over every Tab and neither ever advances.
+        if (active.closest('[aria-modal="true"]')) return;
+        // Focus fell out of the dialog — a focused control was unmounted or
+        // disabled. Bring it back instead of letting Tab leave the dialog.
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+        return;
+      }
       if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();
@@ -576,7 +587,9 @@ function EntryModal({
     setDraft(initial);
     setValidationError("");
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [initial, onClose, open]);
+    // onClose is deliberately not a dependency: the parent passes a new arrow on
+    // every render, and re-running this would throw away what the user typed.
+  }, [initial, open]);
 
   if (!open) return null;
 
@@ -1002,80 +1015,94 @@ type ImportPreview = XlsxImportPreview & {
   fileName: string;
 };
 
+/** Mounted only while open, so each import starts from a clean wizard. */
 function ImportModal({
-  open,
+  importing,
   onClose,
   onImport,
   existingFingerprints = [],
 }: {
-  open: boolean;
+  importing: boolean;
   onClose: () => void;
-  onImport: (file: File, preview: ImportPreview) => void;
+  onImport: (file: File) => Promise<string | null>;
   existingFingerprints?: string[];
 }) {
-  const inputRef = useRef<HTMLInputElement>(null);
   const [stage, setStage] = useState<"select" | "preview">("select");
+  // The file input only exists in the select stage, so its ref is null by the
+  // time the user confirms; the chosen file has to outlive that element.
+  const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [confirmed, setConfirmed] = useState(false);
   const [error, setError] = useState("");
+  const [parsing, setParsing] = useState(false);
+  const pickRef = useRef(0);
+  const confirmRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useDialogFocus(true, onClose);
 
   useEffect(() => {
-    if (!open) return;
-    /* eslint-disable react-hooks/set-state-in-effect -- reset the import wizard for each open */
-    setStage("select");
-    setPreview(null);
-    setConfirmed(false);
-    setError("");
-    /* eslint-enable react-hooks/set-state-in-effect */
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = previous;
-    };
-  }, [onClose, open]);
-
-  if (!open) return null;
-
+    // The confirm button held focus until it was disabled for the save; once a
+    // failure re-enables it, hand focus back rather than leaving it on <body>.
+    if (error && !importing) confirmRef.current?.focus();
+  }, [error, importing]);
   const handleFile = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const isSupported = /\.xlsx$/i.test(file.name);
+    const selected = event.target.files?.[0];
+    // Clear the control so picking the same path again still fires a change.
+    event.target.value = "";
+    if (!selected) return;
+    const isSupported = /\.xlsx$/i.test(selected.name);
     if (!isSupported) {
+      // Discard a parse still running: its result must not replace this notice.
+      pickRef.current += 1;
       setError("현재는 XLSX 파일만 선택할 수 있습니다.");
       return;
     }
     setError("");
+    // A slow parse must not overwrite a file the user picked after it.
+    const pick = pickRef.current + 1;
+    pickRef.current = pick;
+    setParsing(true);
     try {
-      const parsed = await previewXlsxImport(file, { existingFingerprints });
-      setPreview({ ...parsed, fileName: file.name });
+      const parsed = await previewXlsxImport(selected, { existingFingerprints });
+      if (pick !== pickRef.current) return;
+      setFile(selected);
+      setPreview({ ...parsed, fileName: selected.name });
+      setError("");
       setStage("preview");
     } catch (reason: unknown) {
+      if (pick !== pickRef.current) return;
       setError(reason instanceof Error ? reason.message : "엑셀 파일을 읽지 못했습니다.");
+    } finally {
+      // Unconditional: this call is the only one that raised the flag.
+      setParsing(false);
     }
   };
 
+  const handleConfirm = async () => {
+    if (!file || !preview) return;
+    setError("");
+    const message = await onImport(file);
+    if (message) setError(message);
+  };
+
   const backToSelect = () => {
+    pickRef.current += 1;
     setStage("select");
+    setFile(null);
     setPreview(null);
     setConfirmed(false);
-    if (inputRef.current) inputRef.current.value = "";
+    setError("");
   };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-scrim p-0 backdrop-blur-sm sm:items-center sm:p-6">
-      <div role="dialog" aria-modal="true" aria-labelledby="import-dialog-title" className="w-full max-w-xl overflow-hidden rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:rounded-3xl">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="import-dialog-title" className="w-full max-w-xl overflow-hidden rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:rounded-3xl">
         <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-5 sm:px-7">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-300/80">데이터 가져오기</p>
             <h2 id="import-dialog-title" className="mt-1 text-xl font-semibold tracking-tight text-ink">엑셀 내역 불러오기</h2>
             <p className="mt-1 text-xs text-faint">파일은 이 기기에서 미리보기한 뒤 확인 후 저장합니다.</p>
           </div>
-          <button type="button" onClick={onClose} aria-label="가져오기 닫기" className="rounded-2xl p-2 text-muted transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="close" size={20} /></button>
+          <button type="button" onClick={onClose} disabled={importing} aria-label="가져오기 닫기" className="rounded-2xl p-2 text-muted transition hover:bg-card-strong hover:text-ink disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="close" size={20} /></button>
         </div>
 
         <div className="px-5 py-5 sm:px-7 sm:py-6">
@@ -1087,11 +1114,11 @@ function ImportModal({
 
           {stage === "select" && (
             <div>
-              <input ref={inputRef} id="workbook-file" type="file" accept=".xlsx" onChange={handleFile} className="sr-only" />
+              <input id="workbook-file" type="file" accept=".xlsx" disabled={parsing} onChange={handleFile} className="sr-only" />
               <label htmlFor="workbook-file" className="group flex cursor-pointer flex-col items-center justify-center rounded-3xl border border-dashed border-sky-400/30 bg-sky-500/[0.04] px-6 py-10 text-center transition hover:border-sky-300/60 hover:bg-sky-500/[0.08] focus-within:ring-2 focus-within:ring-sky-300">
                 <span className="flex h-12 w-12 items-center justify-center rounded-3xl bg-sky-500/10 text-sky-200"><Icon name="upload" size={22} /></span>
                 <span className="mt-4 text-sm font-medium text-body">엑셀 파일을 선택하세요</span>
-              <span className="mt-1 text-xs text-faint">.xlsx 지원 · 저장 전에 시트와 행을 미리 확인합니다</span>
+              <span className="mt-1 text-xs text-faint">{parsing ? "파일을 읽는 중입니다…" : ".xlsx 지원 · 저장 전에 시트와 행을 미리 확인합니다"}</span>
               </label>
               {error && <p role="alert" className="mt-3 text-xs text-rose-200">{error}</p>}
               <p className="mt-4 flex items-start gap-2 rounded-2xl bg-card px-3 py-3 text-xs leading-5 text-faint"><Icon name="info" size={15} className="mt-0.5 text-muted" />개인정보가 포함된 파일은 필요한 범위만 선택하고, 저장 전 인식 결과를 확인하세요.</p>
@@ -1103,7 +1130,7 @@ function ImportModal({
               <div className="flex items-center gap-3 rounded-3xl border border-line bg-card px-4 py-3">
                 <span className="flex h-9 w-9 items-center justify-center rounded-2xl bg-emerald-500/10 text-emerald-200"><Icon name="file" size={17} /></span>
                 <div className="min-w-0 flex-1"><p className="truncate text-sm font-medium text-body">{preview.fileName}</p><p className="mt-0.5 text-[11px] text-faint">파일 선택 완료 · 로컬 미리보기</p></div>
-                <button type="button" onClick={backToSelect} className="text-xs text-sky-200 underline-offset-2 hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">변경</button>
+                <button type="button" onClick={backToSelect} disabled={importing} className="text-xs text-sky-200 underline-offset-2 hover:underline disabled:opacity-40 disabled:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">변경</button>
               </div>
               <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {[["인식 행", `${preview.records.length}건`], ["인식 시트", `${preview.sheetNames.length}개`], ["건너뛸 행", `${preview.counts.skippedRows}건`], ["중복 의심", `${preview.counts.duplicates}건`]].map(([label, value]) => <div key={label} className="rounded-3xl border border-line bg-card-soft px-3 py-3"><p className="text-[11px] text-faint">{label}</p><p className="mt-1 text-base font-semibold text-ink">{value}</p></div>)}
@@ -1115,12 +1142,14 @@ function ImportModal({
                 {!!preview.warnings.length && <p className="mt-2 text-xs text-amber-200">주의 {preview.warnings.length}건 · 일부 행을 확인해주세요.</p>}
               </div>
               <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-3xl border border-amber-400/20 bg-amber-500/[0.06] px-4 py-3.5">
-                <input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-line-strong bg-surface accent-emerald-400" />
+                <input type="checkbox" checked={confirmed} disabled={importing} onChange={(event) => setConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-line-strong bg-surface accent-emerald-400" />
                 <span className="text-xs leading-5 text-amber-100/80">미리보기 결과를 확인했으며, 인식된 내역을 저장하겠습니다. 중복·건너뛸 행은 저장 대상에서 제외됩니다.</span>
               </label>
+              {error && <p role="alert" className="mt-3 text-xs text-rose-200">{error}</p>}
+              {importing && <p className="mt-3 text-xs text-faint">저장 중입니다. 완료된 뒤에 닫을 수 있어요.</p>}
               <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <button type="button" onClick={onClose} className="h-11 rounded-2xl px-5 text-sm font-medium text-muted transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">취소</button>
-                <button type="button" disabled={!confirmed} onClick={() => onImport((inputRef.current?.files?.[0]) as File, preview)} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"><Icon name="upload" size={16} /> 확인 후 저장</button>
+                <button type="button" onClick={onClose} disabled={importing} className="h-11 rounded-2xl px-5 text-sm font-medium text-muted transition hover:bg-card-strong hover:text-ink disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">취소</button>
+                <button ref={confirmRef} type="button" disabled={!confirmed || !file || importing} onClick={handleConfirm} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 transition hover:bg-sky-300 disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200">{importing ? <Icon name="refresh" size={16} className="animate-spin" /> : <Icon name="upload" size={16} />} 확인 후 저장</button>
               </div>
             </div>
           )}
@@ -1553,6 +1582,7 @@ export default function GagebuDashboard() {
   const [toast, setToast] = useState("");
   const [entryOpen, setEntryOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<FinanceRecord | null>(null);
+  const [importing, setImporting] = useState(false);
   const [entryDraft, setEntryDraft] = useState<EntryDraft>(defaultDraft());
   const [detailRecord, setDetailRecord] = useState<FinanceRecord | null>(null);
   const [deleteRecord, setDeleteRecord] = useState<FinanceRecord | null>(null);
@@ -1847,9 +1877,11 @@ export default function GagebuDashboard() {
     }
   };
 
-  const handleImport = async (file: File, preview: ImportPreview) => {
-    setSaving(true);
+  /** Reports the failure back to the modal instead of closing it, so a retry
+   *  keeps the preview the user already confirmed. */
+  const handleImport = async (file: File): Promise<string | null> => {
     setError("");
+    setImporting(true);
     try {
       const result = await importXlsxFile(file, repositories, { existingFingerprints });
       const savedTotal = Object.values(result.saved).reduce((sum, value) => sum + value, 0);
@@ -1857,14 +1889,15 @@ export default function GagebuDashboard() {
       setToast(
         savedTotal
           ? `${savedTotal}건을 저장했습니다${result.skippedExisting ? ` · 중복 ${result.skippedExisting}건 제외` : ""}.`
-          : preview.records.length
+          : result.records.length || result.skippedExisting || result.counts.duplicates
             ? "새로 저장할 내역이 없습니다. 중복 내역을 확인해보세요."
             : "저장할 데이터 행이 없습니다.",
       );
+      return null;
     } catch (reason: unknown) {
-      setError(reason instanceof Error ? reason.message : "엑셀 내역을 저장하지 못했습니다.");
+      return reason instanceof Error ? reason.message : "엑셀 내역을 저장하지 못했습니다.";
     } finally {
-      setSaving(false);
+      setImporting(false);
     }
   };
 
@@ -1991,7 +2024,7 @@ export default function GagebuDashboard() {
       <DetailModal record={detailRecord} onClose={() => setDetailRecord(null)} onEdit={openEdit} onDelete={(record) => setDeleteRecord(record)} />
       <DeleteDialog record={deleteRecord} onClose={() => setDeleteRecord(null)} onConfirm={handleDeleteConfirm} />
       <EntryModal open={entryOpen} initial={entryDraft} editingId={editingRecord?.id} workItems={workItems} saving={saving} onClose={() => { if (!saving) { setEntryOpen(false); setEditingRecord(null); } }} onSave={handleSaveDraft} />
-      <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onImport={handleImport} existingFingerprints={existingFingerprints} />
+      {importOpen && <ImportModal importing={importing} onClose={() => { if (!importing) setImportOpen(false); }} onImport={handleImport} existingFingerprints={existingFingerprints} />}
     </div>
   );
 }
