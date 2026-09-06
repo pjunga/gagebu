@@ -112,6 +112,13 @@ service cloud.firestore {
         || value == "cancelled";
     }
 
+    function validWorkCategory(value) {
+      return value == "교수설계"
+        || value == "위시스프링"
+        || value == "레미제라블"
+        || value == "그외";
+    }
+
     function validPriority(value) {
       return value == "low"
         || value == "normal"
@@ -258,7 +265,7 @@ service cloud.firestore {
     function validWorkItem(data, documentId) {
       return data.keys().hasOnly([
           "id", "createdAt", "updatedAt", "source", "fingerprint", "import",
-          "title", "workDate", "course", "courseNumber", "session",
+          "title", "category", "workDate", "course", "courseNumber", "session",
           "clientOrSchool", "amount", "description", "status", "priority",
           "dueDate", "sentAt", "completedAt", "sideIncomeTransactionId",
           "tags", "memo"
@@ -269,6 +276,7 @@ service cloud.firestore {
         && data["id"] == documentId
         && "title" in data
         && isNonEmptyString(data["title"], 300)
+        && (!("category" in data) || validWorkCategory(data["category"]))
         && optionalDate(data, "workDate")
         && optionalString(data, "course", 200)
         && optionalString(data, "courseNumber", 100)

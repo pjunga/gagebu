@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   asFiniteNumber,
   asNonEmptyString,
   entityKindOf,
   isTransaction,
+  WORK_CATEGORIES,
   type SavingsAccount,
   type StockOrder,
   type Transaction,
@@ -60,4 +62,17 @@ test("entityKindOf tells the four record kinds apart", () => {
   assert.equal(entityKindOf(savings), "savingsAccount");
   assert.equal(entityKindOf(order), "stockOrder");
   assert.equal(entityKindOf(work), "workItem");
+});
+
+test("firestore rules accept every work category the app can write", () => {
+  const rules = readFileSync(new URL("../../firestore.rules", import.meta.url), "utf8");
+  const workItemKeys = rules.match(/function validWorkItem[\s\S]*?hasOnly\(\[([\s\S]*?)\]\)/);
+
+  assert.ok(workItemKeys, "validWorkItem should declare its allowed keys");
+  // hasOnly() rejects the whole write when a key is missing, so a new field
+  // has to be listed here or every task save fails with permission-denied.
+  assert.match(workItemKeys[1], /"category"/);
+  for (const category of WORK_CATEGORIES) {
+    assert.ok(rules.includes(`"${category}"`), `firestore.rules is missing ${category}`);
+  }
 });
