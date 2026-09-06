@@ -9,6 +9,7 @@ import {
   type SavingsAccount,
   type SavingsAssetType,
   type StockOrder,
+  type RecordSource,
   type Transaction as DomainTransaction,
   type WorkItem as DomainWorkItem,
   type WorkItemStatus,
@@ -1327,7 +1328,7 @@ function AssetsPanel({
   const visible = assets.filter((record) => {
     if (!isAssetInYear({ ...record, recurring: record.kind === "savings" }, year)) return false;
     if (institution !== "전체 기관" && record.institution !== institution) return false;
-    if (status !== "전체 상태" && record.status !== status) return false;
+    if (status !== "전체 상태" && record.kind === "savings" && record.status !== status) return false;
     return true;
   });
   const visibleTotals = totalByCurrency(visible);
@@ -1633,7 +1634,6 @@ export default function GagebuDashboard() {
       unitPrice: order.unitPrice,
       principalOrBalance: order.principalOrBalance,
       currency: order.currency,
-      status: "active",
       note: order.memo,
     }));
     return [...transactionRecords, ...savingsRecords, ...stockRecords].sort((left, right) => right.date.localeCompare(left.date));
@@ -1670,6 +1670,12 @@ export default function GagebuDashboard() {
   const handleSaveDraft = async (draft: EntryDraft) => {
     const amount = draft.kind === "stock-order" ? Number(draft.quantity) * Number(draft.unitPrice) : Number(draft.amount);
     const id = editingRecord?.id || createEntityId(draft.kind === "savings" ? "saving" : draft.kind === "stock-order" ? "order" : "transaction");
+    const existingSaving = savingsAccounts.find((account) => account.id === id);
+    const existingOrder = stockOrders.find((order) => order.id === id);
+    const existingTransaction = transactions.find((transaction) => transaction.id === id);
+    // source records where a record came from, not who last touched it, so an
+    // imported record stays imported after the user edits it.
+    const sourceOf = (existing?: { source?: RecordSource }): RecordSource => existing?.source ?? "manual";
     setSaving(true);
     setError("");
     try {
@@ -1677,9 +1683,9 @@ export default function GagebuDashboard() {
         // Same as the stock branch: the local repository replaces the stored item
         // wholesale, so spread the existing account before the form's own fields.
         await repositories.savingsAccounts.upsert({
-          ...savingsAccounts.find((account) => account.id === id),
+          ...existingSaving,
           id,
-          source: "manual",
+          source: sourceOf(existingSaving),
           institution: draft.institution.trim() || "기관 미입력",
           accountName: draft.account.trim() || draft.title.trim() || "예금·적금",
           assetType: draft.assetType,
@@ -1690,7 +1696,7 @@ export default function GagebuDashboard() {
           maturityDate: draft.maturityDate || undefined,
           closedAt:
             draft.status === "closed"
-              ? savingsAccounts.find((account) => account.id === id)?.closedAt || currentDate()
+              ? existingSaving?.closedAt || currentDate()
               : undefined,
           memo: draft.note.trim() || undefined,
         });
@@ -1698,9 +1704,9 @@ export default function GagebuDashboard() {
         // The form does not own every stock-order field (currency, fee), and the
         // local repository replaces the stored item wholesale, so keep the rest.
         await repositories.stockOrders.upsert({
-          ...stockOrders.find((order) => order.id === id),
+          ...existingOrder,
           id,
-          source: "manual",
+          source: sourceOf(existingOrder),
           broker: draft.institution.trim() || undefined,
           ticker: draft.ticker.trim().toUpperCase(),
           name: draft.title.trim() || undefined,
@@ -1715,15 +1721,16 @@ export default function GagebuDashboard() {
       } else {
         const isExpense = draft.kind === "expense";
         await repositories.transactions.upsert({
+          ...existingTransaction,
           id,
-          source: "manual",
+          source: sourceOf(existingTransaction),
           type: isExpense ? "expense" : "income",
           category: isExpense ? draft.category : draft.kind === "salary" ? "급여" : "부수입",
           amount,
           memo: draft.title.trim() || entryLabels[draft.kind],
           date: draft.date,
           ...(isExpense
-            ? { workItemId: undefined }
+            ? { workItemId: undefined, incomeDetails: undefined }
             : {
                 incomeDetails: {
                   source: draft.kind === "salary" ? "salary" : "side-income",

@@ -357,6 +357,10 @@ export class LocalStorageRepository<T extends BaseEntity>
     return this.upsert(item);
   }
 
+  /**
+   * Replaces the stored item; see the Firebase repository for the same
+   * contract. Callers spread the existing record in when they mean to keep it.
+   */
   async upsert(item: T): Promise<T> {
     const id = item.id?.trim();
     if (!id) {
