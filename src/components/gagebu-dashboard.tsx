@@ -853,8 +853,6 @@ function EntryModal({
                     ))}
                   </div>
                 </fieldset>
-                <div className="sm:col-span-2">
-                </div>
               </>
             )}
 
