@@ -1229,8 +1229,8 @@ async function saveRecords(
       pending.push(item);
     }
     if (!pending.length) continue;
-    await save(pending);
-    saved[key] += pending.length;
+    // Count what the repository stored, not what was handed to it.
+    saved[key] += (await save(pending)).length;
   }
   return { ...saved, skippedExisting };
 }

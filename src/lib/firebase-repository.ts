@@ -40,10 +40,13 @@ import {
   type Unsubscribe,
 } from "./repository-types";
 
-export /** Firestore caps a batch at 500 writes; the migration path uses the same size. */
+/** Firestore caps a batch at 500 writes. */
 const FIREBASE_BATCH_SIZE = 400;
 
-const FIREBASE_MIGRATION_STORAGE_KEY =
+/** Above this many documents, one collection read beats reading them singly. */
+const SINGLE_READ_LIMIT = 30;
+
+export const FIREBASE_MIGRATION_STORAGE_KEY =
   "gagebu:firebase-migration-complete";
 
 function ensureFirebase(): NonNullable<typeof db> {
@@ -242,16 +245,16 @@ export class FirebaseRepository<T extends BaseEntity>
       if (!item.id?.trim()) {
         throw new RepositoryError("기록 식별자가 없습니다.", {
           code: "validation/missing-id",
-          operation: "upsert",
+          operation: "upsert-many",
         });
       }
     }
+    const written: T[] = [];
+    let committed = 0;
     try {
       const firestore = ensureFirebase();
       const target = await this.collectionForUser();
-      const snapshot = await getDocs(query(target));
-      const storedCreatedAt = new Map(snapshot.docs.map((entry) => [entry.id, entry.data().createdAt]));
-      const written: T[] = [];
+      const storedCreatedAt = await this.createdAtFor(target, items);
       for (let offset = 0; offset < items.length; offset += FIREBASE_BATCH_SIZE) {
         const chunk = items.slice(offset, offset + FIREBASE_BATCH_SIZE);
         const batch = writeBatch(firestore);
@@ -275,16 +278,42 @@ export class FirebaseRepository<T extends BaseEntity>
           });
         }
         await batch.commit();
+        committed += chunk.length;
       }
       return written;
     } catch (error) {
       if (error instanceof RepositoryError) throw error;
-      throw new RepositoryError("Firebase에 기록을 저장하지 못했습니다.", {
-        code: "firebase/write-failed",
-        operation: "upsert",
-        cause: error,
-      });
+      // Earlier chunks are already in Firestore; saying nothing would leave the
+      // user believing an import that half landed did not run at all.
+      throw new RepositoryError(
+        committed
+          ? `Firebase에 기록을 저장하지 못했습니다. ${committed}건은 이미 저장되었습니다.`
+          : "Firebase에 기록을 저장하지 못했습니다.",
+        { code: "firebase/write-failed", operation: "upsert-many", cause: error },
+      );
     }
+  }
+
+  /**
+   * Stored creation dates for the ids about to be written. A handful of
+   * documents are cheaper to read one by one than the whole collection.
+   */
+  private async createdAtFor(
+    target: Awaited<ReturnType<FirebaseRepository<T>["collectionForUser"]>>,
+    items: T[],
+  ): Promise<Map<string, unknown>> {
+    if (items.length <= SINGLE_READ_LIMIT) {
+      const entries = await Promise.all(
+        items.map(async (item) => {
+          const id = item.id.trim();
+          const existing = await getDoc(doc(target, id));
+          return [id, existing.data()?.createdAt] as const;
+        }),
+      );
+      return new Map(entries);
+    }
+    const snapshot = await getDocs(query(target));
+    return new Map(snapshot.docs.map((entry) => [entry.id, entry.data().createdAt]));
   }
 
   async remove(id: string): Promise<void> {
@@ -438,9 +467,9 @@ export async function migrateLegacyTransactionsToFirebase(
     return !remoteFingerprints.has(item.fingerprint);
   });
   let uploaded = 0;
-  for (let offset = 0; offset < pending.length; offset += 400) {
+  for (let offset = 0; offset < pending.length; offset += FIREBASE_BATCH_SIZE) {
     const batch = writeBatch(firestore);
-    for (const item of pending.slice(offset, offset + 400)) {
+    for (const item of pending.slice(offset, offset + FIREBASE_BATCH_SIZE)) {
       const reference = doc(target, item.id);
       batch.set(
         reference,
@@ -455,7 +484,7 @@ export async function migrateLegacyTransactionsToFirebase(
     }
     if (pending.length) {
       await batch.commit();
-      uploaded += Math.min(400, pending.length - offset);
+      uploaded += Math.min(FIREBASE_BATCH_SIZE, pending.length - offset);
     }
   }
   storageSet(markerStorage, firebaseMigrationKey(userId), "true");

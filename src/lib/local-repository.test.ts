@@ -103,3 +103,76 @@ test("upsertMany keeps the placement rules of a single upsert", async () => {
   assert.equal(matched?.memo, "저녁");
   assert.equal(matched?.createdAt, created.createdAt);
 });
+
+test("upsertMany persists once for the whole batch", async () => {
+  let writes = 0;
+  const storage = fakeStorage();
+  const counting: StorageLike = { ...storage, setItem: (key, value) => { writes += 1; storage.setItem(key, value); } };
+  const repositoryUnderTest = new LocalStorageRepository<Transaction>({ key: "test:transactions", storage: counting });
+
+  await repositoryUnderTest.upsertMany([
+    transaction({ id: "t1" }),
+    transaction({ id: "t2" }),
+    transaction({ id: "t3" }),
+  ]);
+
+  assert.equal(writes, 1);
+});
+
+test("upsertMany collapses items that address the same row", async () => {
+  const repositoryUnderTest = repository();
+  const written = await repositoryUnderTest.upsertMany([
+    transaction({ id: "t1", memo: "점심" }),
+    transaction({ id: "t1", memo: "저녁" }),
+    transaction({ id: "t2", fingerprint: "a" }),
+    transaction({ id: "t3", fingerprint: "a", memo: "덮어씀" }),
+  ]);
+
+  const stored = await repositoryUnderTest.list();
+  assert.equal(stored.length, 2);
+  assert.equal(written.length, 2);
+  assert.equal(stored.find((item) => item.id === "t1")?.memo, "저녁");
+  assert.equal(stored.find((item) => item.fingerprint === "a")?.memo, "덮어씀");
+});
+
+test("upsertMany keeps nothing when the store cannot be written", async () => {
+  const storage = fakeStorage();
+  const failing: StorageLike = {
+    ...storage,
+    setItem: (key, value) => {
+      if (value.includes("붙지 않아야 함")) throw new Error("quota");
+      storage.setItem(key, value);
+    },
+  };
+  const repositoryUnderTest = new LocalStorageRepository<Transaction>({ key: "test:transactions", storage: failing });
+  await repositoryUnderTest.upsert(transaction({ id: "t1" }));
+
+  await assert.rejects(() =>
+    repositoryUnderTest.upsertMany([transaction({ id: "t2", memo: "붙지 않아야 함" })]),
+  );
+  const stored = await repositoryUnderTest.list();
+  assert.equal(stored.length, 1);
+  assert.equal(stored[0].id, "t1");
+});
+
+test("upsertMany rejects a batch with a missing id before writing any of it", async () => {
+  const repositoryUnderTest = repository();
+  await assert.rejects(
+    () => repositoryUnderTest.upsertMany([transaction({ id: "t1" }), transaction({ id: " " })]),
+    /기록 식별자가 없습니다/,
+  );
+  assert.equal((await repositoryUnderTest.list()).length, 0);
+});
+
+test("upsertMany on an empty batch touches nothing", async () => {
+  let writes = 0;
+  const storage = fakeStorage();
+  const counting: StorageLike = { ...storage, setItem: (key, value) => { writes += 1; storage.setItem(key, value); } };
+  const repositoryUnderTest = new LocalStorageRepository<Transaction>({ key: "test:transactions", storage: counting });
+  let notifications = 0;
+  await repositoryUnderTest.subscribe(() => { notifications += 1; });
+
+  assert.deepEqual(await repositoryUnderTest.upsertMany([]), []);
+  assert.equal(writes, 0);
+  assert.equal(notifications, 1); // only the immediate one from subscribe
+});

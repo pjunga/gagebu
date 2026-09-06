@@ -266,6 +266,12 @@ function parseStored<T extends BaseEntity>(raw: string | null): T[] {
   });
 }
 
+/** Where each stored row sits, so a batch does not rescan the array per item. */
+interface ItemIndex {
+  byId: Map<string, number>;
+  byFingerprint: Map<string, number>;
+}
+
 function cloneStored<T extends BaseEntity>(item: T): T {
   try {
     return structuredClone(item);
@@ -358,24 +364,28 @@ export class LocalStorageRepository<T extends BaseEntity>
   }
 
   /**
-   * Replaces the stored item; see the Firebase repository for the same
-   * contract. Callers spread the existing record in when they mean to keep it.
+   * Places one item; the caller decides when to persist and notify. The index
+   * is optional: a batch builds it once instead of scanning per item, which is
+   * quadratic on a large import.
    */
-  /** Places one item; the caller decides when to persist and notify. */
-  private apply(item: T): T {
+  private apply(item: T, index?: ItemIndex): T {
     const id = item.id?.trim();
     if (!id) {
       throw new RepositoryError("기록 식별자가 없습니다.", {
         code: "validation/missing-id",
-        operation: "upsert",
+        operation: index ? "upsert-many" : "upsert",
       });
     }
     const current = cloneStored(this.normalize({ ...item, id }));
-    const existingIndex = this.items.findIndex((candidate) => candidate.id === id);
+    const existingIndex = index
+      ? index.byId.get(id) ?? -1
+      : this.items.findIndex((candidate) => candidate.id === id);
     const fingerprintIndex =
       existingIndex >= 0 || !current.fingerprint
         ? -1
-        : this.items.findIndex((candidate) => candidate.fingerprint === current.fingerprint);
+        : index
+          ? index.byFingerprint.get(current.fingerprint) ?? -1
+          : this.items.findIndex((candidate) => candidate.fingerprint === current.fingerprint);
     const stored = this.items[existingIndex >= 0 ? existingIndex : fingerprintIndex];
     const updated: T = {
       ...current,
@@ -384,12 +394,20 @@ export class LocalStorageRepository<T extends BaseEntity>
       createdAt: current.createdAt ?? stored?.createdAt ?? nowIso(),
       updatedAt: nowIso(),
     };
-    if (existingIndex >= 0) this.items[existingIndex] = updated;
-    else if (fingerprintIndex >= 0) this.items[fingerprintIndex] = updated;
-    else this.items.push(updated);
+    const at =
+      existingIndex >= 0 ? existingIndex : fingerprintIndex >= 0 ? fingerprintIndex : this.items.length;
+    this.items[at] = updated;
+    if (index) {
+      index.byId.set(id, at);
+      if (updated.fingerprint) index.byFingerprint.set(updated.fingerprint, at);
+    }
     return updated;
   }
 
+  /**
+   * Replaces the stored item; see the Firebase repository for the same
+   * contract. Callers spread the existing record in when they mean to keep it.
+   */
   async upsert(item: T): Promise<T> {
     const updated = this.apply(item);
     this.persist();
@@ -399,15 +417,45 @@ export class LocalStorageRepository<T extends BaseEntity>
 
   /**
    * Writes a whole batch behind a single persist and a single notification.
-   * Doing it one at a time re-serialises the store and re-renders every
-   * subscriber per record, which is quadratic once an import is large.
+   * One at a time re-serialises the store and re-renders every subscriber per
+   * record, so a large import spends most of its time on work it repeats.
+   *
+   * Items addressing the same row — same id, or same fingerprint — collapse to
+   * the last one given, and the result holds the rows actually stored. Nothing
+   * is kept if the write fails.
    */
   async upsertMany(items: T[]): Promise<T[]> {
     if (!items.length) return [];
-    const updated = items.map((item) => this.apply(item));
-    this.persist();
-    this.emit();
-    return updated.map((item) => cloneStored(item));
+    for (const item of items) {
+      if (!item.id?.trim()) {
+        throw new RepositoryError("기록 식별자가 없습니다.", {
+          code: "validation/missing-id",
+          operation: "upsert-many",
+        });
+      }
+    }
+    const previous = this.items;
+    this.items = [...previous];
+    try {
+      const index: ItemIndex = { byId: new Map(), byFingerprint: new Map() };
+      this.items.forEach((item, at) => {
+        index.byId.set(item.id, at);
+        if (item.fingerprint) index.byFingerprint.set(item.fingerprint, at);
+      });
+      const written = new Map<number, T>();
+      for (const item of items) {
+        const updated = this.apply(item, index);
+        written.set(index.byId.get(updated.id) ?? this.items.indexOf(updated), updated);
+      }
+      this.persist();
+      this.emit();
+      return [...written.values()].map((item) => cloneStored(item));
+    } catch (error) {
+      // A partly applied batch that never reached storage would resurrect on
+      // the next successful write and vanish on a reload.
+      this.items = previous;
+      throw error;
+    }
   }
 
   async remove(id: string): Promise<void> {
