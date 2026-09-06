@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useState, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
 import {
   GoogleAuthProvider,
   browserLocalPersistence,
@@ -23,6 +29,27 @@ type AuthState =
   | { status: "loading" }
   | { status: "signed-out"; message?: string }
   | { status: "allowed"; user: User };
+
+const AuthenticatedUserContext = createContext<User | null>(null);
+
+export function AuthAccountControls() {
+  const user = useContext(AuthenticatedUserContext);
+
+  if (!user) return null;
+
+  return (
+    <div className="flex min-w-0 shrink-0 items-center gap-2 rounded-xl border border-white/10 bg-slate-950/85 px-2.5 py-1.5 text-xs text-slate-300 shadow-xl backdrop-blur">
+      <span className="hidden max-w-40 truncate 2xl:inline">{user.email}</span>
+      <button
+        type="button"
+        onClick={() => auth && void signOut(auth)}
+        className="shrink-0 rounded-lg border border-white/10 px-2.5 py-1.5 text-slate-200 transition hover:border-white/20 hover:bg-white/10"
+      >
+        로그아웃
+      </button>
+    </div>
+  );
+}
 
 function friendlyAuthError(error: unknown): string {
   const code =
@@ -133,19 +160,9 @@ export default function AuthGate({ children }: { children: ReactNode }) {
 
   if (state.status === "allowed") {
     return (
-      <>
-        <div className="fixed right-4 top-4 z-40 flex items-center gap-3 rounded-xl border border-white/10 bg-slate-950/85 px-3 py-2 text-xs text-slate-300 shadow-xl backdrop-blur">
-          <span className="max-w-48 truncate">{state.user.email}</span>
-          <button
-            type="button"
-            onClick={() => auth && void signOut(auth)}
-            className="rounded-lg border border-white/10 px-2.5 py-1.5 text-slate-200 transition hover:border-white/20 hover:bg-white/10"
-          >
-            로그아웃
-          </button>
-        </div>
+      <AuthenticatedUserContext.Provider value={state.user}>
         {children}
-      </>
+      </AuthenticatedUserContext.Provider>
     );
   }
 
