@@ -45,7 +45,7 @@ export function AuthAccountControls() {
   if (!user) return null;
 
   return (
-    <div className="flex min-w-0 shrink-0 items-center gap-2 rounded-2xl border border-line bg-card px-2.5 py-1.5 text-xs text-body backdrop-blur">
+    <div className="flex min-w-0 shrink-0 items-center gap-2 rounded-2xl border border-line bg-card px-2.5 py-0 text-xs text-body backdrop-blur lg:py-1.5">
       <span className="hidden max-w-40 truncate 2xl:inline">{user.email}</span>
       <button
         type="button"

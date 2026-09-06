@@ -40,23 +40,34 @@ const STORAGE_KEYS = [
 /** Survives a reload mid-run: the next run puts the records back before it starts. */
 const BACKUP_KEY = "gagebu:mobile-audit-backup:v1";
 
+const thisMonth = new Date().toISOString().slice(0, 7);
+const previousMonth = new Date(new Date().setMonth(new Date().getMonth() - 1)).toISOString().slice(0, 7);
+const day = (month, date) => `${month}-${date}`;
+
 const SEED = {
   "gagebu:transactions:v2": [
-    { id: "t1", source: "manual", type: "expense", category: "식비", amount: 15000, memo: "점심 도시락", date: "2026-09-05" },
-    { id: "t2", source: "manual", type: "expense", category: "주거·관리비", amount: 1250000, memo: "월세", date: "2026-09-01" },
-    { id: "t3", source: "import", fingerprint: "fp1", type: "income", category: "급여", amount: 3200000, memo: "9월 급여", date: "2026-09-05",
-      incomeDetails: { source: "salary", employer: "테스트 회사", grossAmount: 3600000, netAmount: 3200000, month: "2026-09" } },
+    { id: "t1", source: "manual", type: "expense", category: "식비", amount: 15000, memo: "점심 도시락", date: day(thisMonth, "05") },
+    { id: "t2", source: "manual", type: "expense", category: "주거·관리비", amount: 1250000, memo: "월세", date: day(thisMonth, "01") },
+    { id: "t3", source: "import", fingerprint: "fp1", type: "income", category: "급여", amount: 3200000, memo: "이번 달 급여", date: day(thisMonth, "05"),
+      incomeDetails: { source: "salary", employer: "테스트 회사", grossAmount: 3600000, netAmount: 3200000, month: thisMonth } },
+    // Without a record in the previous month the 전월 대비 card only ever shows
+    // its empty branch, and the hint the cards gained is never rendered.
+    { id: "t0", source: "manual", type: "income", category: "급여", amount: 3100000, memo: "지난달 급여", date: day(previousMonth, "05"),
+      incomeDetails: { source: "salary", netAmount: 3100000, month: previousMonth } },
   ],
   "gagebu:savings-accounts:v1": [
-    { id: "s1", source: "manual", institution: "저축 은행", accountName: "정기적금", assetType: "savings", principal: 3000000, balance: 3120000, monthlyContribution: 250000, startDate: "2026-01-05", maturityDate: "2026-09-20" },
+    { id: "s1", source: "manual", institution: "저축 은행", accountName: "정기적금", assetType: "savings", principal: 3000000, balance: 3120000, monthlyContribution: 250000, startDate: day(previousMonth, "05"), maturityDate: day(thisMonth, "20") },
   ],
   "gagebu:stock-orders:v1": [
-    { id: "o1", source: "manual", broker: "증권사", ticker: "AAPL", name: "애플", side: "buy", quantity: 5, unitPrice: 243.5, totalAmount: 1217.5, orderDate: "2026-09-02", currency: "USD" },
+    { id: "o1", source: "manual", broker: "증권사", ticker: "AAPL", name: "애플", side: "buy", quantity: 5, unitPrice: 243.5, totalAmount: 1217.5, orderDate: day(thisMonth, "02"), currency: "USD" },
   ],
   "gagebu:work-items:v1": [
-    { id: "w1", source: "manual", title: "강의 자료 정리", workDate: "2026-09-08", status: "in-progress", amount: 300000, description: "기초 과정 3회차" },
+    { id: "w1", source: "manual", title: "강의 자료 정리", workDate: day(thisMonth, "08"), status: "in-progress", amount: 300000, description: "기초 과정 3회차" },
   ],
 };
+
+/** Only these hold user records; the rest are markers restored alongside them. */
+const RECORD_KEYS = STORAGE_KEYS.slice(0, 4);
 
 /** Width and the height of a phone that actually has it, so a sheet is judged against a real screen. */
 const SCREENS = [
@@ -77,19 +88,20 @@ const DESKTOP_SCREENS = [
 const VIEWS = ["한눈에 보기", "수입·지출", "자산", "작업 관리"];
 const MIN_TARGET = 44;
 
-/** Selector + why, so an exception is a decision on the record rather than a judgement call. */
-const TARGET_ALLOWLIST = [];
-
-let running = false;
-
 /** Generous: a dev server recompiles for each iframe, and a stall must still surface. */
 const SCREEN_TIMEOUT_MS = 150000;
+
+/** Rising token: a run that timed out must not write over a later restore. */
+globalThis.__mobileAuditRun ??= { token: 0, running: false, hosts: new Set() };
+const state = globalThis.__mobileAuditRun;
 
 function readStore() {
   return Object.fromEntries(STORAGE_KEYS.map((key) => [key, localStorage.getItem(key)]));
 }
 
-function writeStore(entries) {
+function writeStore(entries, token) {
+  // A run that already ended (timed out, superseded) must not write again.
+  if (token !== undefined && token !== state.token) return;
   for (const [key, value] of Object.entries(entries)) {
     if (value === null) localStorage.removeItem(key);
     else localStorage.setItem(key, value);
@@ -117,9 +129,10 @@ async function probe({ width, height }, read, skipSeedWait = false) {
   host.style.cssText = "position:fixed;left:-10000px;top:0";
   host.innerHTML = `<iframe src="${location.origin}" style="width:${width}px;height:${height}px;border:0"></iframe>`;
   document.body.appendChild(host);
+  state.hosts.add(host);
   const frame = host.querySelector("iframe");
   try {
-    await withTimeout(new Promise((resolve) => { frame.onload = resolve; }), 15000, `${width}px iframe 로드`);
+    await withTimeout(new Promise((resolve) => { frame.onload = resolve; }), SCREEN_TIMEOUT_MS, `${width}px iframe 로드`);
     const doc = frame.contentDocument;
     const win = frame.contentWindow;
     let ready = skipSeedWait;
@@ -136,6 +149,7 @@ async function probe({ width, height }, read, skipSeedWait = false) {
     // Stop a timed-out run from writing again after the records are restored.
     frame.src = "about:blank";
     host.remove();
+    state.hosts.delete(host);
   }
 }
 
@@ -160,7 +174,6 @@ const lineCount = (el) => {
 function smallTargets(doc) {
   return [...doc.querySelectorAll("button, a, select, input")]
     .filter(isVisible)
-    .filter((el) => !TARGET_ALLOWLIST.some((rule) => el.matches(rule.selector)))
     // A visually hidden control is operated through its label, not directly.
     .filter((el) => !el.closest(".sr-only"))
     .map((el) => {
@@ -185,7 +198,7 @@ function navCheck(doc, win) {
     // Kept as a guard: the label is nowrap today, so this only fires if that changes.
     wrapped: tabs.filter((tab) => lineCount(labelOf(tab)) > 1).map((tab) => tab.innerText.trim()),
     activeMarked: tabs.some((tab) => tab.getAttribute("aria-current") === "page"),
-    minHeight: Math.min(...tabs.map((tab) => Math.round(tab.getBoundingClientRect().height))),
+    minHeight: tabs.length ? Math.min(...tabs.map((tab) => Math.round(tab.getBoundingClientRect().height))) : 0,
   };
 }
 
@@ -210,53 +223,71 @@ function statCardCheck(doc) {
   };
 }
 
-/** Opens the entry sheet and measures it, including the targets only it shows. */
+/** Opens each sheet in turn: their close buttons only exist while they are open. */
 async function modalCheck(doc, win) {
-  const opener = [...doc.querySelectorAll("button")].find((button) => /^\+?\s*추가$/.test(button.innerText.trim()));
-  if (!opener) return { open: false, small: [] };
-  opener.click();
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  const dialog = doc.querySelector('[role="dialog"]');
-  if (!dialog) return { open: false, small: [] };
-  const rect = dialog.getBoundingClientRect();
-  const result = {
-    open: true,
-    fullWidth: Math.round(rect.x) === 0 && Math.round(rect.width) === win.innerWidth,
-    bottomSheet: Math.abs(rect.y + rect.height - win.innerHeight) < 4,
-    withinViewport: rect.height <= win.innerHeight,
-    // A form taller than its box must have something that scrolls it.
-    unscrollableOverflow: [...dialog.querySelectorAll("form, div")].filter(
-      (el) => el.scrollHeight > el.clientHeight + 4 && !/auto|scroll/.test(getComputedStyle(el).overflowY),
-    ).length,
-    small: smallTargets(dialog),
-  };
-  [...dialog.querySelectorAll("button")].find((b) => /닫기/.test(b.getAttribute("aria-label") || ""))?.click();
-  await new Promise((resolve) => setTimeout(resolve, 300));
-  return result;
+  const openers = [
+    { label: "새 내역", find: (d) => [...d.querySelectorAll("button")].find((b) => /^\+?\s*추가$/.test(b.innerText.trim())) },
+    { label: "내역 상세", find: (d) => [...d.querySelectorAll("button")].find((b) => /상세 보기$/.test((b.getAttribute("aria-label") || "").trim())) },
+    { label: "작업 상세", find: (d) => [...d.querySelectorAll("button")].find((b) => b.innerText.trim() === "상세") },
+    // Reached only from inside the detail sheet, and its close button is one of
+    // the ones this change resized.
+    { label: "작업 수정", nested: true, find: (d) => [...d.querySelectorAll("button")].find((b) => b.innerText.trim() === "상세") },
+    { label: "가져오기", find: (d) => [...d.querySelectorAll("button")].find((b) => /가져오기$/.test((b.getAttribute("aria-label") || b.innerText).trim())) },
+  ];
+  const small = [];
+  let sheet = null;
+  for (const opener of openers) {
+    const button = opener.find(doc);
+    if (!button || !button.getClientRects().length) continue;
+    button.click();
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    if (opener.nested) {
+      const step = [...doc.querySelectorAll('[role="dialog"] button')].find((b) => b.innerText.trim() === "수정");
+      if (!step) continue;
+      step.click();
+      await new Promise((resolve) => setTimeout(resolve, 700));
+    }
+    const dialog = doc.querySelector('[role="dialog"], [role="alertdialog"]');
+    if (!dialog) continue;
+    small.push(...smallTargets(dialog).map((target) => ({ ...target, modal: opener.label })));
+    if (!sheet) {
+      const rect = dialog.getBoundingClientRect();
+      sheet = {
+        open: true,
+        fullWidth: Math.round(rect.x) === 0 && Math.round(rect.width) === win.innerWidth,
+        bottomSheet: Math.abs(rect.y + rect.height - win.innerHeight) < 4,
+        withinViewport: rect.height <= win.innerHeight,
+        // A form taller than its box must have something that scrolls it.
+        unscrollableOverflow: [...dialog.querySelectorAll("form, div")].filter(
+          (el) => el.scrollHeight > el.clientHeight + 4 && !/auto|scroll/.test(getComputedStyle(el).overflowY),
+        ).length,
+      };
+    }
+    const close = [...dialog.querySelectorAll("button")].find((b) => /닫기|취소/.test((b.getAttribute("aria-label") || b.innerText).trim()));
+    close?.click();
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  return { ...(sheet ?? { open: false, fullWidth: false, bottomSheet: false, withinViewport: true, unscrollableOverflow: 0 }), small };
 }
 
 /**
  * The seed hides the empty states, and their buttons are the ones a first-time
  * user has to press. One pass with nothing stored covers them.
  */
-async function emptyStatePass(screen, views) {
-  writeStore(Object.fromEntries(STORAGE_KEYS.map((key) => [key, null])));
-  try {
-    return await probe(screen, async (doc) => {
-      for (let i = 0; i < 60; i += 1) {
-        if (doc.querySelector("main") && /없습니다/.test(doc.body.innerText)) break;
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-      const small = [];
-      for (const view of views) {
-        if (!(await gotoView(doc, view))) throw new Error(`${screen.width}px 빈 상태: ${view} 탭을 찾지 못함`);
-        small.push(...smallTargets(doc).map((target) => ({ ...target, view })));
-      }
-      return small;
-    }, true);
-  } finally {
-    writeStore(seedEntries());
-  }
+async function emptyStatePass(screen, views, token) {
+  writeStore(Object.fromEntries(RECORD_KEYS.map((key) => [key, null])), token);
+  return probe(screen, async (doc) => {
+    for (let i = 0; i < 60; i += 1) {
+      if (doc.querySelector("main") && /없습니다/.test(doc.body.innerText)) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    const small = [];
+    for (const view of views) {
+      if (!(await gotoView(doc, view))) throw new Error(`${screen.width}px 빈 상태: ${view} 탭을 찾지 못함`);
+      small.push(...smallTargets(doc).map((target) => ({ ...target, view })));
+    }
+    return small;
+  }, true);
 }
 
 async function measure(screen, views) {
@@ -281,7 +312,7 @@ async function measure(screen, views) {
 }
 
 async function mobileAudit({ screens = SCREENS, desktopScreens = DESKTOP_SCREENS, views = VIEWS, force = false } = {}) {
-  if (running) throw new Error("이미 실행 중입니다 — 두 번 돌리면 두 번째가 시드를 백업으로 착각합니다.");
+  if (state.running) throw new Error("이미 실행 중입니다 — 두 번 돌리면 두 번째가 시드를 백업으로 착각합니다.");
   const mode = document.documentElement.dataset.storageMode;
   if (mode !== "local") {
     throw new Error(
@@ -295,24 +326,29 @@ async function mobileAudit({ screens = SCREENS, desktopScreens = DESKTOP_SCREENS
   // before doing anything else, or this run would back up the seed.
   const stale = localStorage.getItem(BACKUP_KEY);
   if (stale) {
-    writeStore(JSON.parse(stale));
-    localStorage.removeItem(BACKUP_KEY);
-    console.warn("이전 실행이 중단되어 있어 기록을 먼저 되돌렸습니다.");
+    try {
+      writeStore(JSON.parse(stale));
+      localStorage.removeItem(BACKUP_KEY);
+      console.warn("이전 실행이 중단되어 있어 기록을 먼저 되돌렸습니다.");
+    } catch (error) {
+      throw new Error(`중단된 실행의 백업을 읽지 못했습니다. ${BACKUP_KEY} 를 직접 확인하세요: ${error.message}`);
+    }
   }
 
   const existing = readStore();
-  const hasRecords = Object.values(existing).some((value) => value && value !== "[]");
+  const hasRecords = RECORD_KEYS.some((key) => existing[key] && existing[key] !== "[]");
   if (hasRecords && !force && !confirm("저장된 기록을 시드로 잠시 바꿉니다. 끝나면 되돌립니다. 계속할까요?")) {
     return { table: [], failures: ["사용자가 중단"] };
   }
 
   const failures = [];
   const table = [];
-  running = true;
-  localStorage.setItem(BACKUP_KEY, JSON.stringify(existing));
-  writeStore(seedEntries());
+  state.running = true;
+  const token = ++state.token;
 
   try {
+    localStorage.setItem(BACKUP_KEY, JSON.stringify(existing));
+    writeStore(seedEntries(), token);
     for (const screen of screens) {
       let row;
       try {
@@ -324,7 +360,16 @@ async function mobileAudit({ screens = SCREENS, desktopScreens = DESKTOP_SCREENS
       }
 
       const cards = row.perView[views[0]].cards;
-      const smallTotal = Object.values(row.perView).reduce((sum, view) => sum + view.small.length, 0) + row.modal.small.length;
+      // The header and tab bar sit on every view; count each control once.
+      const seen = new Set();
+      const uniqueSmall = [...Object.values(row.perView).flatMap((view) => view.small), ...row.modal.small]
+        .filter((target) => {
+          const key = `${target.modal ?? ""}|${target.label}|${target.height}|${target.width}`;
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        });
+      const smallTotal = uniqueSmall.length;
       table.push({
         width: screen.width,
         "탭 4개 보임": row.nav.present && row.nav.fits && !row.nav.cutOff.length && !row.nav.ellipsis.length && !row.nav.wrapped.length,
@@ -345,9 +390,9 @@ async function mobileAudit({ screens = SCREENS, desktopScreens = DESKTOP_SCREENS
       if (!row.nav.activeMarked) failures.push(`${screen.width}: 활성 탭 표시 없음`);
       for (const [view, result] of Object.entries(row.perView)) {
         if (result.overflows) failures.push(`${screen.width} ${view}: 가로 스크롤 발생`);
-        result.small.forEach((target) => failures.push(`${screen.width} ${view}: ${target.label} ${target.height}×${target.width}`));
         if (result.tableShown === true) failures.push(`${screen.width} ${view}: 테이블이 카드 목록으로 바뀌지 않음`);
       }
+      uniqueSmall.forEach((target) => failures.push(`${screen.width}${target.modal ? ` ${target.modal}` : ""}: ${target.label} ${target.height}×${target.width}`));
       if (cards.found) {
         if (cards.spread > 2) failures.push(`${screen.width}: 스탯 카드 높이차 ${cards.spread}px`);
         cards.multiline.forEach((text) => failures.push(`${screen.width}: 카드 텍스트 ${text.lines}줄 — ${text.text}`));
@@ -361,18 +406,19 @@ async function mobileAudit({ screens = SCREENS, desktopScreens = DESKTOP_SCREENS
         if (!row.modal.bottomSheet) failures.push(`${screen.width}: 모달이 하단에 붙지 않음`);
         if (!row.modal.withinViewport) failures.push(`${screen.width}: 모달이 뷰포트(${screen.height}px)를 넘침`);
         if (row.modal.unscrollableOverflow) failures.push(`${screen.width}: 모달 안에 넘치는데 스크롤되지 않는 영역 ${row.modal.unscrollableOverflow}곳`);
-        row.modal.small.forEach((target) => failures.push(`${screen.width} 모달: ${target.label} ${target.height}×${target.width}`));
       }
     }
 
     // The empty states never appear with the seed in place.
     try {
-      const emptySmall = await withTimeout(emptyStatePass(screens[0], views), SCREEN_TIMEOUT_MS, `${screens[0].width}px 빈 상태 측정`);
+      const emptySmall = await withTimeout(emptyStatePass(screens[0], views, token), SCREEN_TIMEOUT_MS, `${screens[0].width}px 빈 상태 측정`);
+      writeStore(seedEntries(), token);
       table.push({ width: `${screens[0].width} 빈 상태`, "탭 4개 보임": "-", "탭 높이": "-", "44px 미만": emptySmall.length,
         "카드 높이차": "-", "카드 2줄": "-", "가로 넘침": "-", "바텀시트": "-" });
       emptySmall.forEach((target) => failures.push(`${screens[0].width} 빈 상태 ${target.view}: ${target.label} ${target.height}×${target.width}`));
     } catch (error) {
       failures.push(`${screens[0].width} 빈 상태: ${error.message}`);
+      writeStore(seedEntries(), token);
     }
 
     // The touch sizes are meant to stop at lg; measure that rather than trust it.
@@ -388,7 +434,7 @@ async function mobileAudit({ screens = SCREENS, desktopScreens = DESKTOP_SCREENS
           });
           const month = doc.querySelector('input[aria-label="조회 월"]');
           controls.push({ label: "조회 월", height: month ? Math.round(month.getBoundingClientRect().height) : null });
-          return { cards, controls, navHidden: !doc.querySelector('nav[aria-label="모바일 메뉴"]')?.getClientRects().length };
+          return { cards, controls, small: smallTargets(doc), navHidden: !doc.querySelector('nav[aria-label="모바일 메뉴"]')?.getClientRects().length };
         }), SCREEN_TIMEOUT_MS, `${screen.width}px 측정`);
 
         table.push({ width: screen.width, "탭 4개 보임": wide.navHidden ? "숨김" : "노출", "탭 높이": "-",
@@ -403,19 +449,32 @@ async function mobileAudit({ screens = SCREENS, desktopScreens = DESKTOP_SCREENS
           if (!screen.expectCompact && control.height < MIN_TARGET) failures.push(`${screen.width}: ${control.label} ${control.height}px — 아직 터치 크기여야 함`);
         }
         wide.cards.clipped.forEach((text) => failures.push(`${screen.width}: 카드 텍스트 잘림 — ${text.text}`));
+        // Below lg the touch sizes still apply, so the sweep has to run there too.
+        if (!screen.expectCompact) {
+          wide.small.forEach((target) => failures.push(`${screen.width}: ${target.label} ${target.height}×${target.width}`));
+        }
       } catch (error) {
         failures.push(`${screen.width}: ${error.message}`);
       }
     }
   } finally {
+    // Anything still running belongs to a superseded token and can no longer
+    // write, but its iframe would still boot the app and persist; drop them all
+    // before putting the records back.
+    state.token += 1;
+    for (const host of state.hosts) host.remove();
+    state.hosts.clear();
     try {
       writeStore(existing);
-      localStorage.removeItem(BACKUP_KEY);
+      const check = readStore();
+      const restored = RECORD_KEYS.every((key) => check[key] === existing[key]);
+      if (restored) localStorage.removeItem(BACKUP_KEY);
+      else failures.push(`복원이 확인되지 않았습니다 — ${BACKUP_KEY} 에 원본이 남아 있습니다`);
     } catch (error) {
       console.error("복원 실패 — 아래 JSON 을 수동으로 되돌리세요", JSON.stringify(existing), error);
-      failures.push("기록 복원 실패 — 콘솔의 JSON 을 확인하세요");
+      failures.push(`기록 복원 실패 — ${BACKUP_KEY} 또는 콘솔의 JSON 을 확인하세요`);
     }
-    running = false;
+    state.running = false;
   }
 
   console.table(table);
