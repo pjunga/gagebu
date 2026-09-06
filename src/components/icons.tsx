@@ -24,7 +24,9 @@ export type IconName =
   | "refresh"
   | "search"
   | "settings"
+  | "moon"
   | "sparkles"
+  | "sun"
   | "trash"
   | "upload"
   | "wallet"
@@ -220,6 +222,19 @@ export function Icon({ name, size = 18, className = "", ...props }: IconProps) {
       return (
         <svg {...common}>
           <path d="m12 3 1.3 4.7L18 9l-4.7 1.3L12 15l-1.3-4.7L6 9l4.7-1.3L12 3ZM19 15l.7 2.3L22 18l-2.3.7L19 21l-.7-2.3L16 18l2.3-.7L19 15Z" />
+        </svg>
+      );
+    case "sun":
+      return (
+        <svg {...common}>
+          <circle cx="12" cy="12" r="4.2" />
+          <path d="M12 2.6v2.2M12 19.2v2.2M4.2 12H2m20 0h-2.2M5.6 5.6 4 4m14.4 1.6L20 4M5.6 18.4 4 20m14.4-1.6L20 20" />
+        </svg>
+      );
+    case "moon":
+      return (
+        <svg {...common}>
+          <path d="M20 14.2A8.2 8.2 0 0 1 9.8 4a8.4 8.4 0 1 0 10.2 10.2Z" />
         </svg>
       );
     case "menu":
