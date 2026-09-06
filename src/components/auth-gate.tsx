@@ -50,7 +50,7 @@ export function AuthAccountControls() {
       <button
         type="button"
         onClick={() => auth && void signOut(auth)}
-        className="shrink-0 rounded-xl border border-line px-2.5 py-1.5 text-body transition hover:border-line-strong hover:bg-hover"
+        className="min-h-11 shrink-0 rounded-xl border border-line px-2.5 py-1.5 text-body transition hover:border-line-strong hover:bg-hover lg:min-h-0"
       >
         로그아웃
       </button>

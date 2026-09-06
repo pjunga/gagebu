@@ -183,14 +183,16 @@ const dateText = (value?: string) => {
       });
 };
 
-const shortMonth = (value: string) => `${Number(value.slice(5, 7))}월`;
-
 const monthText = (value: string) => {
   const date = new Date(`${value}-01T00:00:00`);
   return Number.isNaN(date.getTime())
     ? value
     : date.toLocaleDateString("ko-KR", { year: "numeric", month: "long" });
 };
+
+/** Falls back to the full label rather than printing "0월" for an empty input. */
+const shortMonth = (value: string) =>
+  /^\d{4}-\d{2}$/.test(value) ? `${Number(value.slice(5, 7))}월` : monthText(value);
 
 /**
  * The salary form collects the net pay in its own field, so reading
@@ -480,7 +482,7 @@ function StatCard({
     <>
       <div className="flex items-start justify-between gap-2">
         <p className="min-w-0 truncate text-xs font-medium text-muted">
-          <span className={shortLabel ? "sm:hidden" : undefined}>{shortLabel ?? label}</span>
+          <span className={shortLabel ? "sm:hidden" : undefined}>{shortLabel || label}</span>
           {shortLabel && <span className="hidden sm:inline">{label}</span>}
         </p>
         <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-2xl sm:h-8 sm:w-8 ${toneClasses(tone, true)}`}>
@@ -488,7 +490,10 @@ function StatCard({
         </span>
       </div>
       <p className="mt-3 truncate text-xl font-semibold tracking-tight text-ink sm:mt-4 sm:text-2xl">{value}</p>
-      <p className="mt-2 truncate text-[11px] leading-4 text-faint">
+      <p
+        className="mt-2 truncate text-[11px] leading-4 text-faint xl:overflow-visible xl:whitespace-normal"
+        title={hint ? `${subtext} · ${hint}` : subtext}
+      >
         {subtext}
         {hint && <span className="hidden sm:inline"> · {hint}</span>}
       </p>
@@ -671,7 +676,7 @@ function EntryModal({
             type="button"
             onClick={onClose}
             aria-label="내역 추가 닫기"
-            className="rounded-2xl p-2 text-muted transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
+            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl p-2 text-muted transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 lg:h-10 lg:w-10"
           >
             <Icon name="close" size={20} />
           </button>
@@ -970,7 +975,7 @@ function DetailModal({
               {record.kind === "expense" ? "−" : record.kind === "stock-order" && record.side === "sell" ? "+" : "+"}{currency(record.amount, record.currency)}
             </p>
           </div>
-          <button type="button" onClick={onClose} aria-label="상세 닫기" className="rounded-2xl p-2 text-muted transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"><Icon name="close" size={20} /></button>
+          <button type="button" onClick={onClose} aria-label="상세 닫기" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl p-2 text-muted transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 lg:h-10 lg:w-10"><Icon name="close" size={20} /></button>
         </div>
         <div className="px-5 py-5 sm:px-7">
           <dl className="divide-y divide-line rounded-3xl border border-line bg-card-soft px-4">
@@ -1116,7 +1121,7 @@ function ImportModal({
             <h2 id="import-dialog-title" className="mt-1 text-xl font-semibold tracking-tight text-ink">엑셀 내역 불러오기</h2>
             <p className="mt-1 text-xs text-faint">파일은 이 기기에서 미리보기한 뒤 확인 후 저장합니다.</p>
           </div>
-          <button type="button" onClick={onClose} disabled={importing} aria-label="가져오기 닫기" className="rounded-2xl p-2 text-muted transition hover:bg-card-strong hover:text-ink disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="close" size={20} /></button>
+          <button type="button" onClick={onClose} disabled={importing} aria-label="가져오기 닫기" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl p-2 text-muted transition hover:bg-card-strong hover:text-ink disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 lg:h-10 lg:w-10"><Icon name="close" size={20} /></button>
         </div>
 
         <div className="px-5 py-5 sm:px-7 sm:py-6">
@@ -1486,7 +1491,7 @@ function TaskEditModal({
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-scrim p-0 backdrop-blur-sm sm:items-center sm:p-6">
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="task-edit-title" className="flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:max-h-[90vh] sm:rounded-3xl">
-        <div className="flex items-start justify-between border-b border-line px-5 py-5 sm:px-7"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-300/80">작업 상세</p><h2 id="task-edit-title" className="mt-1 text-xl font-semibold text-ink">작업 수정</h2><p className="mt-1 text-xs text-faint">작업 정보와 부수입 연결을 함께 관리합니다.</p></div><button type="button" onClick={onClose} aria-label="작업 수정 닫기" className="rounded-2xl p-2 text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="close" size={20} /></button></div>
+        <div className="flex items-start justify-between border-b border-line px-5 py-5 sm:px-7"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-300/80">작업 상세</p><h2 id="task-edit-title" className="mt-1 text-xl font-semibold text-ink">작업 수정</h2><p className="mt-1 text-xs text-faint">작업 정보와 부수입 연결을 함께 관리합니다.</p></div><button type="button" onClick={onClose} aria-label="작업 수정 닫기" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl p-2 text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 lg:h-10 lg:w-10"><Icon name="close" size={20} /></button></div>
         <form onSubmit={handleSubmit} className="overflow-y-auto px-5 py-5 sm:px-7 sm:py-6"><div className="grid gap-4 sm:grid-cols-2"><div className="sm:col-span-2"><FieldLabel htmlFor="edit-task-title" required>작업 이름</FieldLabel><input id="edit-task-title" value={draft.title} onChange={(event) => update("title", event.target.value)} className={fieldClass} aria-invalid={Boolean(validationError)} aria-describedby={validationError ? "task-validation-error" : undefined} /></div><div><FieldLabel htmlFor="edit-task-date">작업일</FieldLabel><input id="edit-task-date" type="date" value={draft.workDate} onChange={(event) => update("workDate", event.target.value)} className={fieldClass} /></div><div><FieldLabel htmlFor="edit-task-course">과정·과목</FieldLabel><input id="edit-task-course" value={draft.course} onChange={(event) => update("course", event.target.value)} className={fieldClass} placeholder="예: 기초 과정" /></div><div><FieldLabel htmlFor="edit-task-session">회차</FieldLabel><input id="edit-task-session" value={draft.session} onChange={(event) => update("session", event.target.value)} className={fieldClass} placeholder="예: 3회차" /></div><div><FieldLabel htmlFor="edit-task-client">고객·학교</FieldLabel><input id="edit-task-client" value={draft.clientOrSchool} onChange={(event) => update("clientOrSchool", event.target.value)} className={fieldClass} placeholder="예: 고객 또는 학교" /></div><div><FieldLabel htmlFor="edit-task-amount">예상 금액</FieldLabel><input id="edit-task-amount" type="number" min="0" value={draft.amount} onChange={(event) => update("amount", event.target.value)} className={`${fieldClass} text-right tabular-nums`} placeholder="0" /></div><div><FieldLabel htmlFor="edit-task-sent">발송일</FieldLabel><input id="edit-task-sent" type="date" value={draft.sentAt} onChange={(event) => update("sentAt", event.target.value)} className={fieldClass} /></div><div><FieldLabel htmlFor="edit-task-status">상태</FieldLabel><div className="relative"><select id="edit-task-status" value={draft.status} onChange={(event) => update("status", event.target.value as WorkStatus)} className={selectClass}>{(["planned", "in-progress", "completed", "sent", "paid"] as WorkStatus[]).map((status) => <option key={status} value={status} className="bg-surface">{taskStatusLabels[status]}</option>)}</select><Icon name="chevron-down" size={15} className="pointer-events-none absolute right-3 top-[34px] text-faint" /></div></div><div className="sm:col-span-2"><FieldLabel htmlFor="edit-task-link">연결된 부수입 (선택)</FieldLabel><div className="relative"><select id="edit-task-link" value={draft.sideIncomeTransactionId} onChange={(event) => update("sideIncomeTransactionId", event.target.value)} className={selectClass}><option value="" className="bg-surface">연결하지 않음</option>{sideIncomeRecords.map((record) => <option key={record.id} value={record.id} className="bg-surface">{record.title} · {currency(record.amount)}</option>)}</select><Icon name="chevron-down" size={15} className="pointer-events-none absolute right-3 top-[34px] text-faint" /></div></div><div className="sm:col-span-2"><FieldLabel htmlFor="edit-task-note">메모</FieldLabel><textarea id="edit-task-note" rows={3} value={draft.note} onChange={(event) => update("note", event.target.value)} className={`${fieldClass} h-auto resize-none py-3`} placeholder="작업 메모" /></div></div>{validationError && <p id="task-validation-error" role="alert" className="mt-4 flex items-center gap-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-3 py-2.5 text-xs text-rose-200"><Icon name="info" size={15} />{validationError}</p>}<div className="mt-6 flex flex-col-reverse gap-2 border-t border-line pt-5 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} className="h-11 rounded-2xl px-5 text-sm text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">취소</button><button type="submit" disabled={saving} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 hover:bg-sky-300 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200">{saving && <Icon name="refresh" size={16} className="animate-spin" />}변경 저장</button></div></form>
       </div>
     </div>
@@ -1516,7 +1521,7 @@ function TaskDetailModal({
     ["발송일", task.sentAt ? dateText(task.sentAt) : "미입력"],
     ["부수입 연결", task.sideIncomeTransactionId ? "연결됨" : "연결하지 않음"],
   ];
-  return <div className="fixed inset-0 z-40 flex items-end justify-center bg-scrim p-0 backdrop-blur-sm sm:items-center sm:p-6"><div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="task-detail-title" className="w-full max-w-lg overflow-hidden rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:rounded-3xl"><div className="flex items-start justify-between border-b border-line px-5 py-5 sm:px-7"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-300/80">작업 상세</p><h2 id="task-detail-title" className="mt-2 text-xl font-semibold text-ink">{task.title}</h2><div className="mt-2"><StatusBadge status={task.status} /></div></div><button type="button" onClick={onClose} aria-label="작업 상세 닫기" className="rounded-2xl p-2 text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="close" size={20} /></button></div><div className="px-5 py-5 sm:px-7"><dl className="divide-y divide-line rounded-3xl border border-line bg-card-soft px-4">{details.map(([label, value]) => <div key={label} className="flex items-center justify-between gap-4 py-3 text-sm"><dt className="text-faint">{label}</dt><dd className="text-right text-body">{value}</dd></div>)}</dl>{(task.memo || task.description) && <p className="mt-4 rounded-3xl bg-card px-4 py-3 text-sm leading-6 text-muted">{task.memo || task.description}</p>}<div className="mt-5 flex gap-2"><button type="button" onClick={() => onDelete(task)} className="inline-flex h-11 items-center gap-2 rounded-2xl border border-rose-400/20 px-4 text-sm font-medium text-rose-200 hover:bg-rose-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"><Icon name="trash" size={16} /> 삭제</button><button type="button" onClick={() => onEdit(task)} className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl bg-card-strong px-4 text-sm font-medium text-ink hover:bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="edit" size={16} /> 수정</button></div></div></div></div>;
+  return <div className="fixed inset-0 z-40 flex items-end justify-center bg-scrim p-0 backdrop-blur-sm sm:items-center sm:p-6"><div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="task-detail-title" className="w-full max-w-lg overflow-hidden rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:rounded-3xl"><div className="flex items-start justify-between border-b border-line px-5 py-5 sm:px-7"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-300/80">작업 상세</p><h2 id="task-detail-title" className="mt-2 text-xl font-semibold text-ink">{task.title}</h2><div className="mt-2"><StatusBadge status={task.status} /></div></div><button type="button" onClick={onClose} aria-label="작업 상세 닫기" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl p-2 text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 lg:h-10 lg:w-10"><Icon name="close" size={20} /></button></div><div className="px-5 py-5 sm:px-7"><dl className="divide-y divide-line rounded-3xl border border-line bg-card-soft px-4">{details.map(([label, value]) => <div key={label} className="flex items-center justify-between gap-4 py-3 text-sm"><dt className="text-faint">{label}</dt><dd className="text-right text-body">{value}</dd></div>)}</dl>{(task.memo || task.description) && <p className="mt-4 rounded-3xl bg-card px-4 py-3 text-sm leading-6 text-muted">{task.memo || task.description}</p>}<div className="mt-5 flex gap-2"><button type="button" onClick={() => onDelete(task)} className="inline-flex h-11 items-center gap-2 rounded-2xl border border-rose-400/20 px-4 text-sm font-medium text-rose-200 hover:bg-rose-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"><Icon name="trash" size={16} /> 삭제</button><button type="button" onClick={() => onEdit(task)} className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl bg-card-strong px-4 text-sm font-medium text-ink hover:bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="edit" size={16} /> 수정</button></div></div></div></div>;
 }
 
 function TaskDeleteDialog({ task, onClose, onConfirm }: { task: WorkItem | null; onClose: () => void; onConfirm: () => void }) {
@@ -2027,7 +2032,7 @@ export default function GagebuDashboard() {
         </header>
 
         <main className="mx-auto max-w-[1440px] px-4 pb-8 pt-4 sm:px-7 sm:pt-5 xl:px-10">
-          <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm text-faint">{activeView === "overview" ? "오늘의 금융 흐름을 가볍게 확인해보세요." : activeNav.description}</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{activeNav.label}</h2></div><div className="flex items-center gap-2 sm:hidden"><label className="flex flex-1 items-center gap-2 rounded-2xl border border-line bg-card px-3 py-0"><Icon name="calendar" size={15} className="text-faint" /><span className="sr-only">기준 월</span><input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} className="h-11 w-full bg-transparent text-xs text-body outline-none" /></label><button type="button" onClick={() => setImportOpen(true)} aria-label="엑셀 가져오기" className="flex h-11 w-11 items-center justify-center rounded-2xl border border-sky-400/20 text-sky-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 lg:h-10 lg:w-10"><Icon name="upload" size={16} /></button></div></div>
+          <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm text-faint">{activeView === "overview" ? "오늘의 금융 흐름을 가볍게 확인해보세요." : activeNav.description}</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{activeNav.label}</h2></div><div className="flex items-center gap-2 sm:hidden"><label className="flex flex-1 items-center gap-2 rounded-2xl border border-line bg-card px-3 py-0"><Icon name="calendar" size={15} className="text-faint" /><span className="sr-only">기준 월</span><input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} className="h-11 w-full bg-transparent text-xs text-body outline-none" /></label><button type="button" onClick={() => setImportOpen(true)} aria-label="엑셀 가져오기" className="flex h-11 w-11 items-center justify-center rounded-2xl border border-sky-400/20 text-sky-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="upload" size={16} /></button></div></div>
           {error && <div role="alert" className="mb-5 flex items-start gap-3 rounded-3xl border border-rose-400/20 bg-rose-500/[0.07] px-4 py-3 text-sm text-rose-100"><Icon name="info" size={17} className="mt-0.5 text-rose-200" /><div className="flex-1"><p className="font-medium">데이터를 불러오는 중 문제가 생겼습니다.</p><p className="mt-1 text-xs text-rose-100/70">{error}</p></div><button type="button" onClick={() => setError("")} aria-label="오류 닫기" className="rounded-xl p-1 text-rose-200/70 hover:bg-rose-500/10 hover:text-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"><Icon name="close" size={15} /></button></div>}
           {activeView === "overview" && <OverviewPanel records={records} tasks={workItems} month={selectedMonth} loading={loading} onNavigate={setActiveView} onAdd={openAdd} onOpenImport={() => setImportOpen(true)} onOpenDetail={setDetailRecord} />}
           {activeView === "transactions" && <TransactionsPanel records={records} month={selectedMonth} setMonth={setSelectedMonth} year={selectedYear} setYear={setSelectedYear} onAdd={openAdd} onOpenDetail={setDetailRecord} onOpenImport={() => setImportOpen(true)} />}
