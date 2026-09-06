@@ -52,6 +52,12 @@ NEXT_PUBLIC_DEV_AUTH_BYPASS=1
 - 표면·경계·텍스트: `bg-app`, `bg-surface`, `bg-card`, `bg-field`, `border-line`, `text-ink`, `text-body`, `text-muted`, `text-faint`
 - 강조색: 수입/기본(세이지), 지출(클레이), 부수입(오커), 자산(더스티 블루), 주식(모브) 다섯 계열을 Tailwind 색 변수로 덮어써서 사용합니다. 테마별로 밝기 단계가 반대로 매핑되므로, 새 UI를 만들 때도 팔레트 값을 직접 적지 말고 토큰과 기존 계열 클래스를 씁니다.
 
+## 모바일 레이아웃 점검
+
+`scripts/mobile-audit.js`는 320·360·390·414·430px에서 탭 바, 44px 터치 타깃, 스탯 카드 줄바꿈, 가로 스크롤, 모달 바텀시트를 재어 표로 보여줍니다. `pnpm dev` 후 `http://localhost:3000` 콘솔에 파일 내용을 붙여넣고 `await mobileAudit()`을 실행합니다 — node로 실행하는 스크립트가 아닙니다.
+
+의존성이 없는 대신 CI에는 들어가지 않습니다. 모바일 레이아웃을 건드렸다면 직접 돌려보세요. 창 크기 조절 대신 앱을 해당 폭의 iframe에 띄워 재므로 미디어 쿼리는 정확하지만, 주소창 높이 변화나 터치 동작은 재현하지 못합니다.
+
 ## 배포
 
 `main`에 머지하면 Vercel이 자동 배포합니다. Vercel 프로젝트에도 `.env.local`과 같은 `NEXT_PUBLIC_*` 값을 등록해야 로그인이 동작합니다.

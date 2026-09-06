@@ -40,7 +40,7 @@ export default function ThemeToggle({ className = "" }: { className?: string }) 
       onClick={toggle}
       aria-label={isDark ? "라이트 모드로 전환" : "다크 모드로 전환"}
       title={isDark ? "라이트 모드" : "다크 모드"}
-      className={`group inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-line bg-card text-muted transition hover:-translate-y-0.5 hover:border-line-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 ${className}`}
+      className={`group inline-flex h-11 w-11 items-center justify-center rounded-2xl lg:h-10 lg:w-10 border border-line bg-card text-muted transition hover:-translate-y-0.5 hover:border-line-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 ${className}`}
     >
       <span className="transition-transform duration-300 group-hover:rotate-12">
         <Icon name={isDark ? "sun" : "moon"} size={17} />
