@@ -403,7 +403,11 @@ export class LocalStorageRepository<T extends BaseEntity>
     onData: (items: T[]) => void,
     onError?: RepositoryErrorListener,
   ): Promise<Unsubscribe> {
-    this.listeners.add(onData);
+    // One wrapper per call, so two subscriptions are two entries even when the
+    // caller passes the same function twice — React setState keeps its identity
+    // across renders, and a shared entry means one unsubscribe kills both.
+    const listener: RepositoryListener<T> = (items) => onData(items);
+    this.listeners.add(listener);
     try {
       onData(this.snapshot());
     } catch (error) {
@@ -415,7 +419,7 @@ export class LocalStorageRepository<T extends BaseEntity>
       );
     }
     return () => {
-      this.listeners.delete(onData);
+      this.listeners.delete(listener);
     };
   }
 
