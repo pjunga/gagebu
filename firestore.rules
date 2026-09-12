@@ -73,6 +73,11 @@ service cloud.firestore {
       return !(key in data) || isDateText(data[key]);
     }
 
+    function isCalendarDay(value) {
+      return value is string && value.matches("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+        && timestamp.date(int(value[0:4]), int(value[5:7]), int(value[8:10])).day() == int(value[8:10]);
+    }
+
     function validSource(value) {
       return value == "manual" || value == "legacy" || value == "import";
     }
@@ -183,7 +188,7 @@ service cloud.firestore {
           "id", "createdAt", "updatedAt", "source", "fingerprint", "import",
           "type", "kind", "category", "amount", "memo", "description", "date",
           "occurredAt", "paymentDate", "incomeDetails", "incomeDetail", "details",
-          "workItemId"
+          "workItemId", "expenseDetails"
         ])
         && validMetadata(data)
         && validLegacyCompatibleId(data, documentId)
@@ -203,6 +208,12 @@ service cloud.firestore {
         && (!("incomeDetails" in data) || validIncomeDetails(data["incomeDetails"]))
         && (!("incomeDetail" in data) || validIncomeDetails(data["incomeDetail"]))
         && (!("details" in data) || validIncomeDetails(data["details"]))
+        && (!("expenseDetails" in data) || (
+          data.expenseDetails is map
+          && data.expenseDetails.keys().hasOnly(["paymentMethod", "merchant", "note"])
+          && optionalString(data.expenseDetails, "paymentMethod", 200)
+          && optionalString(data.expenseDetails, "merchant", 200)
+          && optionalString(data.expenseDetails, "note", 1000)))
         && optionalNonEmptyString(data, "workItemId", 200);
     }
 
@@ -211,7 +222,7 @@ service cloud.firestore {
           "id", "createdAt", "updatedAt", "source", "fingerprint", "import",
           "institution", "accountName", "assetType", "principal", "balance",
           "monthlyContribution", "interestRate", "interestAmount", "startDate",
-          "maturityDate", "memo"
+          "maturityDate", "closedAt", "memo"
         ])
         && validMetadata(data)
         && "id" in data
@@ -229,6 +240,7 @@ service cloud.firestore {
         && optionalMoney(data, "interestAmount")
         && optionalDate(data, "startDate")
         && optionalDate(data, "maturityDate")
+        && (!("closedAt" in data) || isCalendarDay(data.closedAt))
         && optionalString(data, "memo", 1000);
     }
 
@@ -280,7 +292,7 @@ service cloud.firestore {
     function validWorkItem(data, documentId) {
       return data.keys().hasOnly([
           "id", "createdAt", "updatedAt", "source", "fingerprint", "import",
-          "title", "category", "workDate", "course", "courseNumber", "session",
+          "title", "category", "categoryId", "workDate", "course", "courseNumber", "session",
           "clientOrSchool", "amount", "description", "status", "priority",
           "dueDate", "sentAt", "completedAt", "sideIncomeTransactionId",
           "tags", "memo"
@@ -292,6 +304,7 @@ service cloud.firestore {
         && "title" in data
         && isNonEmptyString(data["title"], 300)
         && (!("category" in data) || validWorkCategory(data["category"]))
+        && optionalNonEmptyString(data, "categoryId", 200)
         && optionalDate(data, "workDate")
         && optionalString(data, "course", 200)
         && optionalString(data, "courseNumber", 100)
@@ -314,6 +327,13 @@ service cloud.firestore {
       allow read, delete: if isOwner(userId);
       allow create, update: if isOwner(userId)
         && validTransaction(request.resource.data, transactionId);
+    }
+
+    match /users/{userId}/settings/workCategories {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId)
+        && request.resource.data.keys().hasOnly(["initialized"])
+        && request.resource.data.initialized == true;
     }
 
     match /users/{userId}/savingsAccounts/{accountId} {

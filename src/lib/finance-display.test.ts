@@ -15,6 +15,8 @@ import {
   taskNextStatus,
   taskStatus,
   taskStatusOptions,
+  localDate,
+  sortTasksByDeadline,
 } from "./finance-display";
 import { previewImportRows } from "./xlsx-import";
 
@@ -59,6 +61,20 @@ test("work filters use deadlines and keep legacy and undated records accessible"
   const repeated = previewImportRows(sheets, { year: 2026, existingFingerprints: imported.records.map(record => record.fingerprint) });
   assert.equal(repeated.workItems.length, 0);
   assert.equal(repeated.counts.duplicates, 1);
+});
+
+test("local dates stay in the correct day, month and year before 09:00 in Korea", () => {
+  const previous = process.env.TZ;
+  process.env.TZ = "Asia/Seoul";
+  try {
+    for (const date of ["2026-09-12", "2026-09-01", "2026-01-01"]) assert.equal(localDate(new Date(`${date}T00:30:00+09:00`)), date);
+  } finally { if (previous === undefined) delete process.env.TZ; else process.env.TZ = previous; }
+});
+
+test("unfinished tasks sort by legacy or current deadline before undated/paid tasks", () => {
+  const task = (id: string, dueDate?: string) => ({ id, title: id, status: "in-progress" as const, dueDate });
+  const sorted = sortTasksByDeadline([task("later", "2026-10-01"), task("undated"), { ...task("legacy"), workDate: "2026-09-01" }, task("late", "2026-08-01"), { ...task("paid", "2026-01-01"), status: "paid" as const }]);
+  assert.deepEqual(sorted.map(item => item.id), ["late", "legacy", "later", "undated", "paid"]);
 });
 
 test("relativeDay returns only the relative part, never the date itself", () => {

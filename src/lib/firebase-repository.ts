@@ -5,13 +5,16 @@ import {
   documentId,
   getDoc,
   getDocs,
+  getDocsFromServer,
   onSnapshot,
   query,
+  runTransaction,
   serverTimestamp,
   setDoc,
   where,
   writeBatch,
   type DocumentData,
+  type Firestore,
 } from "firebase/firestore";
 import {
   auth,
@@ -41,6 +44,7 @@ import {
   type RepositoryErrorListener,
   type Unsubscribe,
 } from "./repository-types";
+import { initializeFirebaseWorkCategories, renameFirebaseWorkCategory } from "./firebase-work-categories";
 
 /** Firestore caps a batch at 500 writes. */
 const FIREBASE_BATCH_SIZE = 400;
@@ -142,6 +146,8 @@ export interface FirebaseRepositoryOptions<T extends BaseEntity> {
   kind: EntityKind;
   collectionName?: string;
   normalize?: (item: T) => T;
+  firestore?: Firestore;
+  userId?: string;
 }
 
 export class FirebaseRepository<T extends BaseEntity>
@@ -150,8 +156,10 @@ export class FirebaseRepository<T extends BaseEntity>
   private readonly kind: EntityKind;
   private readonly collectionName: string;
   private readonly normalize: (item: T) => T;
+  private readonly options: FirebaseRepositoryOptions<T>;
 
   constructor(options: FirebaseRepositoryOptions<T>) {
+    this.options = options;
     this.kind = options.kind;
     this.collectionName =
       options.collectionName ?? ENTITY_COLLECTIONS[options.kind];
@@ -159,15 +167,15 @@ export class FirebaseRepository<T extends BaseEntity>
   }
 
   private async collectionForUser() {
-    const firestore = ensureFirebase();
-    const userId = await getUserId();
+    const firestore = this.options.firestore ?? ensureFirebase();
+    const userId = this.options.userId ?? await getUserId();
     return collection(firestore, "users", userId, this.collectionName);
   }
 
   async list(): Promise<T[]> {
     try {
       const target = await this.collectionForUser();
-      const snapshot = await getDocs(query(target));
+      const snapshot = await getDocsFromServer(query(target));
       return sortEntities(
         snapshot.docs.map((item) => this.normalize(mapDocument<T>(item.id, item.data()))),
       );
@@ -269,7 +277,7 @@ export class FirebaseRepository<T extends BaseEntity>
     let committed = 0;
     let failure: unknown = null;
     try {
-      const firestore = ensureFirebase();
+      const firestore = this.options.firestore ?? ensureFirebase();
       const target = await this.collectionForUser();
       // Normalise once: the creation dates are looked up for exactly the
       // documents that are about to be written.
@@ -403,12 +411,41 @@ export class FirebaseRepository<T extends BaseEntity>
     }
   }
 
+  async insertMissing(items: T[]): Promise<T[]> {
+    if (!items.length) return [];
+    const target = await this.collectionForUser();
+    const existing = await this.list();
+    const fingerprints = new Set(existing.map(item => item.fingerprint).filter(Boolean));
+    const pending = [...new Map(items.map(item => [item.id, item])).values()].filter(item => {
+      if (item.fingerprint && fingerprints.has(item.fingerprint)) return false;
+      if (item.fingerprint) fingerprints.add(item.fingerprint);
+      return true;
+    });
+    const added: T[] = [];
+    try {
+      for (let offset = 0; offset < pending.length; offset += 100) {
+        const chunk = pending.slice(offset, offset + 100);
+        const written = await runTransaction(this.options.firestore ?? ensureFirebase(), async transaction => {
+          const snapshots = await Promise.all(chunk.map(item => transaction.get(doc(target, item.id))));
+          const missing = chunk.filter((_, index) => !snapshots[index].exists());
+          missing.forEach(item => transaction.set(doc(target, item.id), removeUndefined(item) as DocumentData));
+          return missing;
+        });
+        added.push(...written);
+      }
+      return added;
+    } catch (cause) {
+      throw new RepositoryError("백업 내역을 저장하지 못했습니다. 기존 기록은 유지됩니다.", { cause, alreadySaved: added.length });
+    }
+  }
+
   async subscribe(
     onData: (items: T[]) => void,
     onError?: RepositoryErrorListener,
+    onReady?: () => void,
   ): Promise<Unsubscribe> {
     try {
-      if (this.kind === "transaction") {
+      if (this.kind === "transaction" && !this.options.firestore) {
         try {
           await migrateLegacyTransactionsToFirebase();
         } catch (error) {
@@ -425,6 +462,7 @@ export class FirebaseRepository<T extends BaseEntity>
       const target = await this.collectionForUser();
       const stop = onSnapshot(
         query(target),
+        { includeMetadataChanges: true },
         (snapshot) => {
           try {
             onData(
@@ -434,6 +472,7 @@ export class FirebaseRepository<T extends BaseEntity>
                 ),
               ),
             );
+            if (!snapshot.metadata.fromCache) onReady?.();
           } catch (error) {
             reportRepositoryError(
               onError,
@@ -569,23 +608,34 @@ export async function migrateLegacyTransactionsToFirebase(
   };
 }
 
-export function createFirebaseRepositories(): DomainRepositories {
+export function createFirebaseRepositories(options: { firestore?: Firestore; userId?: string } = {}): DomainRepositories {
   const transactions = new FirebaseRepository<EntityByKind["transaction"]>({
+    ...options,
     kind: "transaction",
   });
   const savingsAccounts = new FirebaseRepository<EntityByKind["savingsAccount"]>({
+    ...options,
     kind: "savingsAccount",
   });
   const stockOrders = new FirebaseRepository<EntityByKind["stockOrder"]>({
+    ...options,
     kind: "stockOrder",
   });
   const workItems = new FirebaseRepository<EntityByKind["workItem"]>({
+    ...options,
     kind: "workItem",
   });
   const workCategories = new FirebaseRepository<EntityByKind["workCategory"]>({
+    ...options,
     kind: "workCategory",
   });
   return {
+    async initializeWorkCategories() {
+      await initializeFirebaseWorkCategories(options.firestore ?? ensureFirebase(), options.userId ?? await getUserId());
+    },
+    async renameWorkCategory(id, name) {
+      await renameFirebaseWorkCategory(options.firestore ?? ensureFirebase(), options.userId ?? await getUserId(), id, name);
+    },
     transactions,
     savingsAccounts,
     stockOrders,

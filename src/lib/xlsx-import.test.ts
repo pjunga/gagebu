@@ -126,8 +126,19 @@ test("previewImportRows reports sheets it does not understand", () => {
   const preview = previewImportRows({ 메모: [["아무거나"]] });
 
   assert.equal(preview.counts.transactions, 0);
-  assert.equal(preview.skippedRows.length, 1);
-  assert.equal(preview.skippedRows[0].sheet, "메모");
+  assert.equal(preview.skippedRows.length, 0);
+  assert.equal(preview.skippedSheets.length, 1);
+  assert.equal(preview.skippedSheets[0].sheet, "메모");
+  assert.equal(preview.counts.skippedSheets, 1);
+});
+
+test("skipped rows and complete warning counts stay separate from unsupported sheets", () => {
+  const preview = previewImportRows({ 월급: [["2026년"], ["월", "급여"], ["1월", "금액 없음"], ["2월", "금액 없음"]], 메모: [["메모"]] }, { year: 2026, maxWarnings: 1 });
+  assert.equal(preview.counts.skippedSheets, 1);
+  assert.equal(preview.counts.skippedRows, 2);
+  assert.equal(preview.counts.warnings, 2);
+  assert.equal(preview.warnings.length, 1);
+  assert.deepEqual(preview.skippedRows.map(row => row.row), [3, 4]);
 });
 
 test("partialSaveError reports everything stored before the failure", () => {

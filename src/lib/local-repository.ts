@@ -2,6 +2,8 @@ import {
   asFiniteNumber,
   asNonEmptyString,
   createEntityId,
+  DEFAULT_WORK_CATEGORY,
+  isTransaction,
   type BaseEntity,
   type IncomeDetails,
   type SavingsAccount,
@@ -20,6 +22,7 @@ import {
   type RepositoryErrorListener,
   type Unsubscribe,
 } from "./repository-types";
+import { defaultWorkCategories, validateCategoryRename } from "./work-categories";
 
 export const LEGACY_TRANSACTION_STORAGE_KEY = "gagebu:transactions";
 export const LEGACY_MIGRATION_STORAGE_KEY = "gagebu:transactions:migrated:v2";
@@ -234,7 +237,7 @@ export function migrateLegacyTransactions(
   const target = storage === undefined ? getDefaultStorage() : storage;
   const legacy = readLegacyTransactions(target);
   const current = parseArray(readRaw(target, LOCAL_STORAGE_KEYS.transactions))
-    .map((item, index) => normalizeLegacyTransaction(item, index))
+    .map((item, index) => isTransaction(item) ? item : normalizeLegacyTransaction(item, index))
     .filter((item): item is Transaction => item !== null)
     .map((item) => ({ ...item, source: item.source === "legacy" ? "manual" : item.source }));
   const merged = mergeItems(current, legacy);
@@ -341,11 +344,55 @@ export class LocalStorageRepository<T extends BaseEntity>
     return sortEntities(this.items).map((item) => cloneStored(item));
   }
 
+  private refresh(): void {
+    const raw = readRaw(this.storage, this.key);
+    if (raw !== null) this.items = parseStored<T>(raw).map(item => this.normalize(item));
+  }
+
+  private async write<R>(change: () => R): Promise<R> {
+    const apply = () => {
+      this.refresh();
+      const previous = this.items;
+      this.items = [...previous];
+      let result: R;
+      let changed = false;
+      try {
+        result = change();
+        changed = this.items.length !== previous.length || this.items.some((item, index) => item !== previous[index]);
+        if (changed) this.persist();
+      } catch (error) {
+        this.items = previous;
+        throw error;
+      }
+      if (changed) this.emit();
+      return result;
+    };
+    // Native locks serialize read/modify/write across browser tabs.
+    return typeof navigator !== "undefined" && navigator.locks && this.storage === getDefaultStorage()
+      ? navigator.locks.request(this.key, apply)
+      : apply();
+  }
+
+  async initialize(initial: T[]): Promise<void> {
+    await this.write(() => {
+      if (readRaw(this.storage, this.key) === null) {
+        initial.forEach(item => this.apply(item, "initialize"));
+      }
+    });
+  }
+
+  /** Change only the matching fields, preserving concurrent edits in other tabs. */
+  async changeMatching(change: (item: T) => T): Promise<void> {
+    await this.write(() => { this.items = this.items.map(change); });
+  }
+
   async list(): Promise<T[]> {
+    this.refresh();
     return this.snapshot();
   }
 
   async get(id: string): Promise<T | null> {
+    this.refresh();
     const found = this.items.find((item) => item.id === id);
     return found ? cloneStored(found) : null;
   }
@@ -397,18 +444,7 @@ export class LocalStorageRepository<T extends BaseEntity>
    * contract. Callers spread the existing record in when they mean to keep it.
    */
   async upsert(item: T): Promise<T> {
-    const previous = this.items;
-    this.items = [...previous];
-    let updated: T;
-    try {
-      updated = this.apply(item, "upsert").item;
-      this.persist();
-    } catch (error) {
-      this.items = previous;
-      throw error;
-    }
-    this.emit();
-    return cloneStored(updated);
+    return this.write(() => cloneStored(this.apply(item, "upsert").item));
   }
 
   /**
@@ -430,45 +466,39 @@ export class LocalStorageRepository<T extends BaseEntity>
         });
       }
     }
-    const previous = this.items;
-    this.items = [...previous];
-    const written = new Map<number, T>();
-    try {
+    return this.write(() => {
+      const written = new Map<number, T>();
       for (const item of items) {
         const { item: updated, at } = this.apply(item, "upsert-many");
         written.set(at, updated);
       }
-      this.persist();
-    } catch (error) {
-      // A partly applied batch that never reached storage would resurrect on
-      // the next successful write and vanish on a reload.
-      this.items = previous;
-      throw error;
-    }
-    // Past this point the store is written: failing here must not roll back.
-    this.emit();
-    return [...written.entries()]
-      .sort(([left], [right]) => left - right)
-      .map(([, item]) => cloneStored(item));
+      return [...written.entries()].sort(([left], [right]) => left - right).map(([, item]) => cloneStored(item));
+    });
+  }
+
+  async insertMissing(items: T[]): Promise<T[]> {
+    if (!items.length) return [];
+    return this.write(() => {
+      const added: T[] = [];
+      for (const item of items) {
+        if (this.items.some(existing => existing.id === item.id || (item.fingerprint && existing.fingerprint === item.fingerprint))) continue;
+        if (!item.id?.trim()) throw new RepositoryError("기록 식별자가 없습니다.");
+        const restored = cloneStored(this.normalize(item));
+        this.items.push(restored);
+        added.push(cloneStored(restored));
+      }
+      return added;
+    });
   }
 
   async remove(id: string): Promise<void> {
-    const next = this.items.filter((item) => item.id !== id);
-    if (next.length === this.items.length) return;
-    const previous = this.items;
-    this.items = next;
-    try {
-      this.persist();
-    } catch (error) {
-      this.items = previous;
-      throw error;
-    }
-    this.emit();
+    await this.write(() => { this.items = this.items.filter(item => item.id !== id); });
   }
 
   async subscribe(
     onData: (items: T[]) => void,
     onError?: RepositoryErrorListener,
+    onReady?: () => void,
   ): Promise<Unsubscribe> {
     // One wrapper per call, so two subscriptions are two entries even when the
     // caller passes the same function twice — React setState keeps its identity
@@ -477,6 +507,7 @@ export class LocalStorageRepository<T extends BaseEntity>
     this.listeners.add(listener);
     try {
       onData(this.snapshot());
+      onReady?.();
     } catch (error) {
       reportRepositoryError(
         onError,
@@ -528,6 +559,19 @@ export function createLocalRepositories(
     storage,
   });
   return {
+    initializeWorkCategories: () => workCategories.initialize(defaultWorkCategories()),
+    async renameWorkCategory(id, name) {
+      const category = validateCategoryRename(await workCategories.list(), id, name);
+      // Bind legacy names first. If either write fails the visible name stays
+      // unchanged; retrying the bindings is harmless. Renames then need one write.
+      await workItems.changeMatching(item => !item.categoryId && (item.category ?? DEFAULT_WORK_CATEGORY) === category.name
+        ? { ...item, categoryId: id } : item);
+      await workCategories.changeMatching(item => {
+        if (item.id !== id) return item;
+        if (item.name !== category.name) throw new Error("카테고리가 다른 창에서 변경되었습니다. 다시 확인해주세요.");
+        return { ...item, name: name.trim(), updatedAt: nowIso() };
+      });
+    },
     transactions,
     savingsAccounts,
     stockOrders,

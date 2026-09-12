@@ -58,6 +58,11 @@ export interface Transaction extends BaseEntity {
   memo: string;
   date: string;
   incomeDetails?: IncomeDetails;
+  expenseDetails?: {
+    paymentMethod?: string;
+    merchant?: string;
+    note?: string;
+  };
   /** Optional direct link for consumers that do not want to unpack incomeDetails. */
   workItemId?: string;
 }
@@ -156,6 +161,8 @@ export const DEFAULT_WORK_CATEGORY: WorkCategory = "교수설계";
 export interface WorkItem extends BaseEntity {
   title: string;
   category?: WorkCategory;
+  /** Stable link; category remains as a fallback for older exports. */
+  categoryId?: string;
   workDate?: string;
   course?: string;
   courseNumber?: string;
