@@ -16,11 +16,14 @@ pnpm lint
 pnpm test     # node:test 기반 도메인·임포트 테스트
 pnpm typecheck
 pnpm test:firestore # Java 21 이상 필요, demo-gagebu 에뮬레이터만 사용
-pnpm exec playwright install chromium
+pnpm exec playwright install chromium webkit # Linux에서는 --with-deps 추가
 pnpm test:e2e # 별도 개발 서버·브라우저 프로필과 합성 데이터 사용
+pnpm test:ios # WebKit의 iPhone SE·iPhone 13·iPad Mini 프로필 검사
 ```
 
 CI는 Node 22에서 단위 검사, 린트, 타입 검사, 프로덕션 빌드, Firestore 규칙 검사와 브라우저 회귀 검사를 실행합니다. 브라우저 검사는 320·390·768·1440px에서 기간 선택, 필터, 터치 영역을 확인하고 저장·재조회·오류 재시도·백업·가져오기를 검증합니다. 실제 사용자 기록을 읽거나 바꾸지 않습니다.
+
+`test:ios`는 macOS 또는 Linux의 Playwright WebKit에서 320·390·768px 기기 프로필과 터치 입력을 검증합니다. 실제 iOS 기기 검사는 아니며, 네이티브 키보드·Files 선택기·VoiceOver는 별도로 확인해야 합니다. [검증 결과와 남은 실기기 확인 항목](docs/ios-validation.md)을 참고하세요.
 
 ## 기록과 백업
 
