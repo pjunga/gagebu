@@ -25,5 +25,6 @@ jobs:
           distribution: temurin
           java-version: 21
       - run: pnpm test:firestore
-      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm exec playwright install --with-deps chromium webkit
       - run: pnpm test:e2e
+      - run: pnpm test:ios

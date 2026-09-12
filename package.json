@@ -11,7 +11,8 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "test:firestore": "firebase emulators:exec --config firebase.test.json --project demo-gagebu --only firestore \"node --import tsx --test tests/firestore.test.ts\"",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:ios": "playwright test -c playwright.ios.config.ts"
   },
   "dependencies": {
     "firebase": "^12.18.0",

@@ -1909,7 +1909,13 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
   const activeNav = navItems.find((item) => item.key === activeView) || navItems[0];
 
   return (
-    <div className="app-glow relative min-h-screen bg-app text-body selection:bg-emerald-300/30 selection:text-ink">
+    <div
+      className="app-glow relative min-h-screen bg-app text-body selection:bg-emerald-300/30 selection:text-ink"
+      onClickCapture={(event) => {
+        // Safari touch does not focus buttons; record the opener before a dialog mounts.
+        if (event.target instanceof Element) event.target.closest("button")?.focus({ preventScroll: true });
+      }}
+    >
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[252px] flex-col border-r border-line bg-surface/85 backdrop-blur-xl lg:flex">
         <div className="flex h-[82px] items-center gap-3 border-b border-line px-6">
           <span className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-300 to-emerald-500 text-emerald-950 shadow-lg shadow-emerald-500/25">
