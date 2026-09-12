@@ -840,6 +840,8 @@ function parseWorkItemsSheet(
     });
     const workItem: WorkItem = {
       id: importedId("work", fingerprint),
+      // This ledger only holds instructional design work; kept out of the fingerprint so re-imports still dedupe.
+      category: "교수설계",
       title: title || [courseNumber, session, clientOrSchool].filter(Boolean).join(" · ") || "작업",
       ...(workDate ? { workDate } : {}),
       ...(courseNumber ? { courseNumber } : {}),

@@ -7,6 +7,7 @@ import {
   type SavingsAccount,
   type StockOrder,
   type Transaction,
+  type WorkCategoryRecord,
   type WorkItem,
 } from "./domain";
 import {
@@ -28,6 +29,7 @@ export const LOCAL_STORAGE_KEYS = {
   savingsAccounts: "gagebu:savings-accounts:v1",
   stockOrders: "gagebu:stock-orders:v1",
   workItems: "gagebu:work-items:v1",
+  workCategories: "gagebu:work-categories:v1",
 } as const;
 
 export type StorageLike = Pick<Storage, "getItem" | "setItem" | "removeItem">;
@@ -521,11 +523,16 @@ export function createLocalRepositories(
     key: LOCAL_STORAGE_KEYS.workItems,
     storage,
   });
+  const workCategories = new LocalStorageRepository<WorkCategoryRecord>({
+    key: LOCAL_STORAGE_KEYS.workCategories,
+    storage,
+  });
   return {
     transactions,
     savingsAccounts,
     stockOrders,
     workItems,
+    workCategories,
     savings: savingsAccounts,
     stocks: stockOrders,
     work: workItems,

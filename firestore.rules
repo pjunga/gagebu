@@ -2,12 +2,15 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Replace the email below with the same address configured in
+    // Keep this list in sync with the comma-separated
     // NEXT_PUBLIC_ALLOWED_GOOGLE_EMAIL before deploying these rules.
     function isAllowedGoogleUser() {
       return request.auth != null
         && request.auth.token.firebase.sign_in_provider == "google.com"
-        && request.auth.token.email == "pjunga0730@gmail.com";
+        && request.auth.token.email in [
+          "pjunga0730@gmail.com",
+          "chihoyoon1217@gmail.com"
+        ];
     }
 
     function isOwner(userId) {
@@ -110,6 +113,11 @@ service cloud.firestore {
         || value == "todo"
         || value == "done"
         || value == "cancelled";
+    }
+
+    // Categories are user-managed, so any short non-empty name is accepted.
+    function validWorkCategory(value) {
+      return isNonEmptyString(value, 60);
     }
 
     function validPriority(value) {
@@ -255,10 +263,24 @@ service cloud.firestore {
         && optionalString(data, "memo", 1000);
     }
 
+    function validWorkCategoryDoc(data, documentId) {
+      return data.keys().hasOnly([
+          "id", "createdAt", "updatedAt", "source", "fingerprint", "import",
+          "name", "order"
+        ])
+        && validMetadata(data)
+        && "id" in data
+        && isNonEmptyString(data["id"], 200)
+        && data["id"] == documentId
+        && "name" in data
+        && validWorkCategory(data["name"])
+        && (!("order" in data) || isCount(data["order"]));
+    }
+
     function validWorkItem(data, documentId) {
       return data.keys().hasOnly([
           "id", "createdAt", "updatedAt", "source", "fingerprint", "import",
-          "title", "workDate", "course", "courseNumber", "session",
+          "title", "category", "workDate", "course", "courseNumber", "session",
           "clientOrSchool", "amount", "description", "status", "priority",
           "dueDate", "sentAt", "completedAt", "sideIncomeTransactionId",
           "tags", "memo"
@@ -269,6 +291,7 @@ service cloud.firestore {
         && data["id"] == documentId
         && "title" in data
         && isNonEmptyString(data["title"], 300)
+        && (!("category" in data) || validWorkCategory(data["category"]))
         && optionalDate(data, "workDate")
         && optionalString(data, "course", 200)
         && optionalString(data, "courseNumber", 100)
@@ -309,6 +332,12 @@ service cloud.firestore {
       allow read, delete: if isOwner(userId);
       allow create, update: if isOwner(userId)
         && validWorkItem(request.resource.data, workItemId);
+    }
+
+    match /users/{userId}/workCategories/{categoryId} {
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+        && validWorkCategoryDoc(request.resource.data, categoryId);
     }
   }
 }
