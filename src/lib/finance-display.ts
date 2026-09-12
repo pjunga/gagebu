@@ -5,6 +5,8 @@
  * (relative dates, currency, which assets belong to a year) can be tested.
  */
 
+import type { WorkItem } from "./domain";
+
 const DAY_MS = 86_400_000;
 
 function startOfDay(isoDate: string): number {
@@ -104,6 +106,44 @@ export function addMonths(dateValue: string, amount: number): string {
 }
 
 export type AssetStatus = "active" | "maturity-soon" | "matured" | "closed";
+
+export const taskStatusOptions = ["planned", "in-progress", "sent", "paid"] as const;
+
+export const taskStatusLabels = {
+  planned: "예정",
+  "in-progress": "진행 중",
+  sent: "발송완료",
+  paid: "입금 완료",
+  cancelled: "취소",
+};
+
+export const taskNextStatus = {
+  planned: "in-progress",
+  "in-progress": "sent",
+  sent: "paid",
+  paid: "paid",
+  cancelled: "planned",
+} as const;
+
+/** A completed legacy task is only sent when a sending date was recorded. */
+export function taskStatus(task: Pick<WorkItem, "status" | "sentAt">): keyof typeof taskStatusLabels {
+  if (task.status === "todo") return "planned";
+  if (task.status === "completed" || task.status === "done") {
+    return task.sentAt ? "sent" : "in-progress";
+  }
+  return task.status;
+}
+
+export function taskDueDate(task: Pick<WorkItem, "dueDate" | "workDate">): string {
+  return task.dueDate || task.workDate || "";
+}
+
+/** Undated tasks remain accessible under all months, never an arbitrary month. */
+export function isTaskInPeriod(task: Pick<WorkItem, "dueDate" | "workDate">, year: string, month: string): boolean {
+  const date = taskDueDate(task);
+  if (!date) return !month;
+  return date.slice(0, 4) === year && (!month || date.slice(5, 7) === month);
+}
 
 /**
  * Only the ending of an account is a stored fact; the rest follows from the

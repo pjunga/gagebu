@@ -10,9 +10,56 @@ import {
   previousMonthOf,
   relativeDay,
   totalByCurrency,
+  isTaskInPeriod,
+  taskDueDate,
+  taskNextStatus,
+  taskStatus,
+  taskStatusOptions,
 } from "./finance-display";
+import { previewImportRows } from "./xlsx-import";
 
 const today = "2026-09-06";
+
+test("work filters use deadlines and keep legacy and undated records accessible", () => {
+  const task = { dueDate: "2026-09-30", workDate: "2025-08-01" };
+  assert.equal(taskDueDate(task), "2026-09-30");
+  assert.equal(isTaskInPeriod(task, "2026", "09"), true);
+  assert.equal(isTaskInPeriod(task, "2026", "08"), false);
+  assert.equal(isTaskInPeriod(task, "2025", "08"), false);
+  assert.equal(isTaskInPeriod(task, "2026", ""), true);
+  assert.equal(isTaskInPeriod({ workDate: "2025-12-31" }, "2025", "12"), true);
+  assert.equal(isTaskInPeriod({ workDate: "2025-12-31" }, "2026", "01"), false);
+  assert.equal(isTaskInPeriod({}, "2026", ""), true);
+  assert.equal(isTaskInPeriod({}, "2026", "09"), false);
+  assert.equal(taskDueDate({}), "");
+
+  assert.deepEqual(taskStatusOptions, ["planned", "in-progress", "sent", "paid"]);
+  assert.equal(taskStatus({ status: "todo" }), "planned");
+  for (const status of ["completed", "done"] as const) {
+    assert.equal(taskStatus({ status }), "in-progress");
+    assert.equal(taskStatus({ status, sentAt: "2026-09-01" }), "sent");
+  }
+  assert.equal(taskStatus({ status: "cancelled" }), "cancelled");
+  assert.equal(taskNextStatus.planned, "in-progress");
+  assert.equal(taskNextStatus["in-progress"], "sent");
+  assert.equal(taskNextStatus.sent, "paid");
+  assert.equal(taskNextStatus.paid, "paid");
+
+  const sheets = { 부수입: [
+    ["작업일", "과정", "회차", "학교", "작업제목", "금액", "상태"],
+    ["2026-09-12", "기존 과정", "1", "기존 학교", "완료 작업", "600", "완료"],
+  ] };
+  const imported = previewImportRows(sheets, { year: 2026 });
+  assert.equal(imported.workItems.length, 1);
+  const legacy = imported.workItems[0];
+  assert.equal(taskStatus(legacy), "sent");
+  assert.equal(taskDueDate(legacy), "2026-09-12");
+  assert.equal(legacy.status, "completed", "displaying a legacy status preserves its source record");
+  assert.equal(legacy.clientOrSchool, "기존 학교");
+  const repeated = previewImportRows(sheets, { year: 2026, existingFingerprints: imported.records.map(record => record.fingerprint) });
+  assert.equal(repeated.workItems.length, 0);
+  assert.equal(repeated.counts.duplicates, 1);
+});
 
 test("relativeDay returns only the relative part, never the date itself", () => {
   assert.equal(relativeDay("2026-09-06", today), "오늘");

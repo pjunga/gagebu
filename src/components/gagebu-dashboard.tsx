@@ -12,7 +12,6 @@ import {
   type RecordSource,
   type Transaction as DomainTransaction,
   type WorkItem as DomainWorkItem,
-  type WorkItemStatus,
 } from "@/lib/domain";
 import {
   categorySubLabel,
@@ -24,6 +23,12 @@ import {
   addMonths,
   savingsStatus,
   type AssetStatus,
+  isTaskInPeriod,
+  taskDueDate,
+  taskNextStatus,
+  taskStatus,
+  taskStatusLabels,
+  taskStatusOptions,
 } from "@/lib/finance-display";
 import { createDataRepositories } from "@/lib/repositories";
 import {
@@ -42,7 +47,7 @@ export type EntryKind =
   | "savings"
   | "stock-order";
 export type { AssetStatus };
-export type WorkStatus = WorkItemStatus;
+export type WorkStatus = ReturnType<typeof taskStatus>;
 
 export type FinanceRecord = {
   id: string;
@@ -275,20 +280,7 @@ function toneClasses(tone: string, soft = false) {
 }
 
 function StatusBadge({ status }: { status?: AssetStatus | WorkStatus }) {
-  const labels: Record<string, string> = {
-    active: "운영 중",
-    "maturity-soon": "만기 임박",
-    matured: "만기 도래",
-    closed: "종료",
-    "planned": "예정",
-    "in-progress": "진행 중",
-    "completed": "완료",
-    sent: "발송",
-    paid: "입금 완료",
-    todo: "예정",
-    done: "완료",
-    cancelled: "취소",
-  };
+  const labels: Record<string, string> = { ...assetStatusLabels, ...taskStatusLabels };
   const styles: Record<string, string> = {
     active: "bg-emerald-500/10 text-emerald-200 ring-emerald-400/20",
     "maturity-soon": "bg-amber-500/10 text-amber-200 ring-amber-400/20",
@@ -296,11 +288,8 @@ function StatusBadge({ status }: { status?: AssetStatus | WorkStatus }) {
     closed: "bg-slate-500/10 text-body ring-slate-400/20",
     planned: "bg-slate-500/10 text-body ring-slate-400/20",
     "in-progress": "bg-sky-500/10 text-sky-200 ring-sky-400/20",
-    completed: "bg-emerald-500/10 text-emerald-200 ring-emerald-400/20",
     sent: "bg-violet-500/10 text-violet-200 ring-violet-400/20",
     paid: "bg-emerald-500/10 text-emerald-200 ring-emerald-400/20",
-    todo: "bg-slate-500/10 text-body ring-slate-400/20",
-    done: "bg-emerald-500/10 text-emerald-200 ring-emerald-400/20",
     cancelled: "bg-rose-500/10 text-rose-200 ring-rose-400/20",
   };
   if (!status) return null;
@@ -1163,7 +1152,7 @@ const navItems: { key: ViewKey; label: string; icon: IconName; description: stri
   { key: "overview", label: "한눈에 보기", icon: "home", description: "월간 흐름과 알림" },
   { key: "transactions", label: "수입·지출", icon: "wallet", description: "거래 내역" },
   { key: "assets", label: "자산", icon: "pie-chart", description: "예금과 투자" },
-  { key: "tasks", label: "작업 관리", icon: "briefcase", description: "수입 연결 작업" },
+  { key: "tasks", label: "작업 관리", icon: "briefcase", description: "마감일과 진행 상태" },
 ];
 
 function formatRelativeDue(dateValue: string) {
@@ -1219,7 +1208,7 @@ function OverviewPanel({
   const categories = Object.entries(categoryTotals).sort(([, left], [, right]) => right - left).slice(0, 4);
   const maxCategory = categories[0]?.[1] ?? 0;
   const maturities = records.filter((record) => record.kind === "savings" && record.maturityDate && record.status !== "closed").sort((left, right) => (left.maturityDate || "").localeCompare(right.maturityDate || "")).slice(0, 3);
-  const ongoing = tasks.filter((task) => task.status === "in-progress" || task.status === "planned" || task.status === "sent").slice(0, 3);
+  const ongoing = tasks.filter((task) => taskStatus(task) !== "paid" && taskStatus(task) !== "cancelled").slice(0, 3);
 
   return (
     <div className="space-y-6">
@@ -1266,7 +1255,7 @@ function OverviewPanel({
         </section>
         <section className="rounded-3xl border border-line bg-card p-5 sm:p-6">
           <SectionHeading eyebrow="To do" title="진행 중인 작업" action={<button type="button" onClick={() => onNavigate("tasks")} className="inline-flex items-center gap-1 text-xs font-medium text-muted transition hover:text-emerald-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">작업 관리 <Icon name="chevron-right" size={14} /></button>} />
-          <div className="mt-4 space-y-2">{ongoing.length ? ongoing.map((task) => <button type="button" key={task.id} onClick={() => onNavigate("tasks")} className="flex w-full items-center gap-3 rounded-3xl border border-line bg-card-soft px-3.5 py-3 text-left transition hover:border-emerald-300/30 hover:bg-emerald-500/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"><span className={`flex h-9 w-9 items-center justify-center rounded-2xl ${task.status === "in-progress" ? "bg-sky-500/10 text-sky-200" : "bg-amber-500/10 text-amber-200"}`}><Icon name={task.status === "in-progress" ? "refresh" : "calendar"} size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-body">{task.title}</span><span className="mt-0.5 block truncate text-[11px] text-faint">{[task.dueDate ? `마감 ${dateText(task.dueDate)}` : task.workDate ? dateText(task.workDate) : "", task.amount ? currency(task.amount) : "", task.description ?? ""].filter(Boolean).join(" · ") || "세부 정보 없음"}</span></span><StatusBadge status={task.status} /></button>) : <EmptyState icon="check" title="진행 중인 작업이 없습니다" description="새로운 작업을 추가하면 이곳에서 관리할 수 있어요." />}</div>
+          <div className="mt-4 space-y-2">{ongoing.length ? ongoing.map((task) => <button type="button" key={task.id} onClick={() => onNavigate("tasks")} className="flex w-full items-center gap-3 rounded-3xl border border-line bg-card-soft px-3.5 py-3 text-left transition hover:border-emerald-300/30 hover:bg-emerald-500/[0.04] focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"><span className={`flex h-9 w-9 items-center justify-center rounded-2xl ${taskStatus(task) === "in-progress" ? "bg-sky-500/10 text-sky-200" : "bg-amber-500/10 text-amber-200"}`}><Icon name={taskStatus(task) === "in-progress" ? "refresh" : "calendar"} size={16} /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-body">{task.title}</span><span className="mt-0.5 block truncate text-[11px] text-faint">{[taskDueDate(task) ? `마감 ${dateText(taskDueDate(task))}` : "마감일 미정", task.amount ? currency(task.amount) : "", task.description ?? ""].filter(Boolean).join(" · ") || "세부 정보 없음"}</span></span><StatusBadge status={taskStatus(task)} /></button>) : <EmptyState icon="check" title="진행 중인 작업이 없습니다" description="새로운 작업을 추가하면 이곳에서 관리할 수 있어요." />}</div>
         </section>
       </div>
     </div>
@@ -1396,55 +1385,34 @@ function AssetsPanel({
 
 type TaskDraft = {
   title: string;
-  workDate: string;
-  course: string;
-  session: string;
-  clientOrSchool: string;
+  dueDate: string;
   amount: string;
   sentAt: string;
   note: string;
-  sideIncomeTransactionId: string;
   status: WorkStatus;
-};
-
-const taskStatusLabels: Record<string, string> = {
-  planned: "예정",
-  "in-progress": "진행 중",
-  completed: "완료",
-  sent: "발송",
-  paid: "입금 완료",
-  todo: "예정",
-  done: "완료",
-  cancelled: "취소",
 };
 
 const taskToDraft = (task: WorkItem): TaskDraft => ({
   title: task.title,
-  workDate: task.workDate ?? "",
-  course: task.course ?? "",
-  session: task.session ?? "",
-  clientOrSchool: task.clientOrSchool ?? "",
-  amount: task.amount ? String(task.amount) : "",
+  dueDate: taskDueDate(task),
+  amount: task.amount === undefined ? "" : String(task.amount),
   sentAt: task.sentAt ?? "",
   note: task.memo ?? task.description ?? "",
-  sideIncomeTransactionId: task.sideIncomeTransactionId ?? "",
-  status: task.status,
+  status: taskStatus(task),
 });
 
 function TaskEditModal({
   task,
-  sideIncomeRecords,
   saving,
   onClose,
   onSave,
 }: {
   task: WorkItem | null;
-  sideIncomeRecords: FinanceRecord[];
   saving: boolean;
   onClose: () => void;
-  onSave: (draft: TaskDraft) => void;
+  onSave: (draft: TaskDraft) => Promise<boolean>;
 }) {
-  const [draft, setDraft] = useState<TaskDraft>(() => task ? taskToDraft(task) : { title: "", workDate: currentDate(), course: "", session: "", clientOrSchool: "", amount: "", sentAt: "", note: "", sideIncomeTransactionId: "", status: "planned" });
+  const [draft, setDraft] = useState<TaskDraft>(() => task ? taskToDraft(task) : { title: "", dueDate: currentDate(), amount: "", sentAt: "", note: "", status: "planned" });
   const [validationError, setValidationError] = useState("");
   const dialogRef = useDialogFocus(Boolean(task), onClose);
 
@@ -1461,19 +1429,19 @@ function TaskEditModal({
     setDraft((previous) => ({ ...previous, [key]: value }));
     setValidationError("");
   };
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!draft.title.trim()) {
-      setValidationError("작업 이름을 입력해주세요.");
+      setValidationError("작업명을 입력해주세요.");
       return;
     }
-    onSave(draft);
+    if (!saving && await onSave(draft)) onClose();
   };
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-scrim p-0 backdrop-blur-sm sm:items-center sm:p-6">
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="task-edit-title" className="flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:max-h-[90vh] sm:rounded-3xl">
-        <div className="flex items-start justify-between border-b border-line px-5 py-5 sm:px-7"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-300/80">작업 상세</p><h2 id="task-edit-title" className="mt-1 text-xl font-semibold text-ink">작업 수정</h2><p className="mt-1 text-xs text-faint">작업 정보와 부수입 연결을 함께 관리합니다.</p></div><button type="button" onClick={onClose} aria-label="작업 수정 닫기" className="rounded-2xl p-2 text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="close" size={20} /></button></div>
-        <form onSubmit={handleSubmit} className="overflow-y-auto px-5 py-5 sm:px-7 sm:py-6"><div className="grid gap-4 sm:grid-cols-2"><div className="sm:col-span-2"><FieldLabel htmlFor="edit-task-title" required>작업 이름</FieldLabel><input id="edit-task-title" value={draft.title} onChange={(event) => update("title", event.target.value)} className={fieldClass} aria-invalid={Boolean(validationError)} aria-describedby={validationError ? "task-validation-error" : undefined} /></div><div><FieldLabel htmlFor="edit-task-date">작업일</FieldLabel><input id="edit-task-date" type="date" value={draft.workDate} onChange={(event) => update("workDate", event.target.value)} className={fieldClass} /></div><div><FieldLabel htmlFor="edit-task-course">과정·과목</FieldLabel><input id="edit-task-course" value={draft.course} onChange={(event) => update("course", event.target.value)} className={fieldClass} placeholder="예: 기초 과정" /></div><div><FieldLabel htmlFor="edit-task-session">회차</FieldLabel><input id="edit-task-session" value={draft.session} onChange={(event) => update("session", event.target.value)} className={fieldClass} placeholder="예: 3회차" /></div><div><FieldLabel htmlFor="edit-task-client">고객·학교</FieldLabel><input id="edit-task-client" value={draft.clientOrSchool} onChange={(event) => update("clientOrSchool", event.target.value)} className={fieldClass} placeholder="예: 고객 또는 학교" /></div><div><FieldLabel htmlFor="edit-task-amount">예상 금액</FieldLabel><input id="edit-task-amount" type="number" min="0" value={draft.amount} onChange={(event) => update("amount", event.target.value)} className={`${fieldClass} text-right tabular-nums`} placeholder="0" /></div><div><FieldLabel htmlFor="edit-task-sent">발송일</FieldLabel><input id="edit-task-sent" type="date" value={draft.sentAt} onChange={(event) => update("sentAt", event.target.value)} className={fieldClass} /></div><div><FieldLabel htmlFor="edit-task-status">상태</FieldLabel><div className="relative"><select id="edit-task-status" value={draft.status} onChange={(event) => update("status", event.target.value as WorkStatus)} className={selectClass}>{(["planned", "in-progress", "completed", "sent", "paid"] as WorkStatus[]).map((status) => <option key={status} value={status} className="bg-surface">{taskStatusLabels[status]}</option>)}</select><Icon name="chevron-down" size={15} className="pointer-events-none absolute right-3 top-[34px] text-faint" /></div></div><div className="sm:col-span-2"><FieldLabel htmlFor="edit-task-link">연결된 부수입 (선택)</FieldLabel><div className="relative"><select id="edit-task-link" value={draft.sideIncomeTransactionId} onChange={(event) => update("sideIncomeTransactionId", event.target.value)} className={selectClass}><option value="" className="bg-surface">연결하지 않음</option>{sideIncomeRecords.map((record) => <option key={record.id} value={record.id} className="bg-surface">{record.title} · {currency(record.amount)}</option>)}</select><Icon name="chevron-down" size={15} className="pointer-events-none absolute right-3 top-[34px] text-faint" /></div></div><div className="sm:col-span-2"><FieldLabel htmlFor="edit-task-note">메모</FieldLabel><textarea id="edit-task-note" rows={3} value={draft.note} onChange={(event) => update("note", event.target.value)} className={`${fieldClass} h-auto resize-none py-3`} placeholder="작업 메모" /></div></div>{validationError && <p id="task-validation-error" role="alert" className="mt-4 flex items-center gap-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-3 py-2.5 text-xs text-rose-200"><Icon name="info" size={15} />{validationError}</p>}<div className="mt-6 flex flex-col-reverse gap-2 border-t border-line pt-5 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} className="h-11 rounded-2xl px-5 text-sm text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">취소</button><button type="submit" disabled={saving} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 hover:bg-sky-300 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200">{saving && <Icon name="refresh" size={16} className="animate-spin" />}변경 저장</button></div></form>
+        <div className="flex items-start justify-between border-b border-line px-5 py-5 sm:px-7"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-300/80">작업 상세</p><h2 id="task-edit-title" className="mt-1 text-xl font-semibold text-ink">작업 수정</h2><p className="mt-1 text-xs text-faint">마감일과 작업 상태를 수정합니다.</p></div><button type="button" onClick={onClose} aria-label="작업 수정 닫기" className="rounded-2xl p-2 text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="close" size={20} /></button></div>
+        <form onSubmit={handleSubmit} className="overflow-y-auto px-5 py-5 sm:px-7 sm:py-6"><div className="grid gap-4 sm:grid-cols-2"><div className="sm:col-span-2"><FieldLabel htmlFor="edit-task-title" required>작업명</FieldLabel><input id="edit-task-title" required maxLength={300} value={draft.title} onChange={(event) => update("title", event.target.value)} className={fieldClass} aria-invalid={Boolean(validationError)} aria-describedby={validationError ? "task-validation-error" : undefined} /></div><div><FieldLabel htmlFor="edit-task-date">마감일</FieldLabel><input id="edit-task-date" type="date" value={draft.dueDate} onChange={(event) => update("dueDate", event.target.value)} className={fieldClass} /></div><div><FieldLabel htmlFor="edit-task-amount">예상 금액</FieldLabel><input id="edit-task-amount" type="number" min="0" max="1000000000000" value={draft.amount} onChange={(event) => update("amount", event.target.value)} className={`${fieldClass} text-right tabular-nums`} placeholder="0" /></div><div><FieldLabel htmlFor="edit-task-sent">발송일</FieldLabel><input id="edit-task-sent" type="date" value={draft.sentAt} onChange={(event) => update("sentAt", event.target.value)} className={fieldClass} /></div><div><FieldLabel htmlFor="edit-task-status">상태</FieldLabel><div className="relative"><select id="edit-task-status" value={draft.status} onChange={(event) => update("status", event.target.value as WorkStatus)} className={selectClass}>{draft.status === "cancelled" && <option value="cancelled" disabled>취소</option>}{taskStatusOptions.map((status) => <option key={status} value={status} className="bg-surface">{taskStatusLabels[status]}</option>)}</select><Icon name="chevron-down" size={15} className="pointer-events-none absolute right-3 top-[34px] text-faint" /></div></div><div className="sm:col-span-2"><FieldLabel htmlFor="edit-task-note">메모</FieldLabel><textarea id="edit-task-note" rows={3} value={draft.note} onChange={(event) => update("note", event.target.value)} className={`${fieldClass} h-auto resize-none py-3`} placeholder="작업 메모" /></div></div>{validationError && <p id="task-validation-error" role="alert" className="mt-4 flex items-center gap-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-3 py-2.5 text-xs text-rose-200"><Icon name="info" size={15} />{validationError}</p>}<div className="mt-6 flex flex-col-reverse gap-2 border-t border-line pt-5 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} className="h-11 rounded-2xl px-5 text-sm text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">취소</button><button type="submit" disabled={saving} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 hover:bg-sky-300 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200">{saving && <Icon name="refresh" size={16} className="animate-spin" />}변경 저장</button></div></form>
       </div>
     </div>
   );
@@ -1493,27 +1461,22 @@ function TaskDetailModal({
   const dialogRef = useDialogFocus(Boolean(task), onClose);
   if (!task) return null;
   const details: [string, string][] = [
-    ["상태", taskStatusLabels[task.status] || task.status],
-    ["작업일", task.workDate ? dateText(task.workDate) : "미정"],
-    ["과정·과목", task.course || "미입력"],
-    ["회차", task.session || "미입력"],
-    ["고객·학교", task.clientOrSchool || "미입력"],
-    ["예상 금액", task.amount ? currency(task.amount) : "미입력"],
+    ["상태", taskStatusLabels[taskStatus(task)]],
+    ["마감일", taskDueDate(task) ? dateText(taskDueDate(task)) : "미정"],
+    ["예상 금액", task.amount === undefined ? "미입력" : currency(task.amount)],
     ["발송일", task.sentAt ? dateText(task.sentAt) : "미입력"],
-    ["부수입 연결", task.sideIncomeTransactionId ? "연결됨" : "연결하지 않음"],
   ];
-  return <div className="fixed inset-0 z-40 flex items-end justify-center bg-scrim p-0 backdrop-blur-sm sm:items-center sm:p-6"><div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="task-detail-title" className="w-full max-w-lg overflow-hidden rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:rounded-3xl"><div className="flex items-start justify-between border-b border-line px-5 py-5 sm:px-7"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-300/80">작업 상세</p><h2 id="task-detail-title" className="mt-2 text-xl font-semibold text-ink">{task.title}</h2><div className="mt-2"><StatusBadge status={task.status} /></div></div><button type="button" onClick={onClose} aria-label="작업 상세 닫기" className="rounded-2xl p-2 text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="close" size={20} /></button></div><div className="px-5 py-5 sm:px-7"><dl className="divide-y divide-line rounded-3xl border border-line bg-card-soft px-4">{details.map(([label, value]) => <div key={label} className="flex items-center justify-between gap-4 py-3 text-sm"><dt className="text-faint">{label}</dt><dd className="text-right text-body">{value}</dd></div>)}</dl>{(task.memo || task.description) && <p className="mt-4 rounded-3xl bg-card px-4 py-3 text-sm leading-6 text-muted">{task.memo || task.description}</p>}<div className="mt-5 flex gap-2"><button type="button" onClick={() => onDelete(task)} className="inline-flex h-11 items-center gap-2 rounded-2xl border border-rose-400/20 px-4 text-sm font-medium text-rose-200 hover:bg-rose-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"><Icon name="trash" size={16} /> 삭제</button><button type="button" onClick={() => onEdit(task)} className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl bg-card-strong px-4 text-sm font-medium text-ink hover:bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="edit" size={16} /> 수정</button></div></div></div></div>;
+  return <div className="fixed inset-0 z-40 flex items-end justify-center bg-scrim p-0 backdrop-blur-sm sm:items-center sm:p-6"><div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="task-detail-title" className="w-full max-w-lg overflow-hidden rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:rounded-3xl"><div className="flex items-start justify-between border-b border-line px-5 py-5 sm:px-7"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-300/80">작업 상세</p><h2 id="task-detail-title" className="mt-2 text-xl font-semibold text-ink">{task.title}</h2><div className="mt-2"><StatusBadge status={taskStatus(task)} /></div></div><button type="button" onClick={onClose} aria-label="작업 상세 닫기" className="rounded-2xl p-2 text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="close" size={20} /></button></div><div className="px-5 py-5 sm:px-7"><dl className="divide-y divide-line rounded-3xl border border-line bg-card-soft px-4">{details.map(([label, value]) => <div key={label} className="flex items-center justify-between gap-4 py-3 text-sm"><dt className="text-faint">{label}</dt><dd className="text-right text-body">{value}</dd></div>)}</dl>{(task.memo || task.description) && <p className="mt-4 rounded-3xl bg-card px-4 py-3 text-sm leading-6 text-muted">{task.memo || task.description}</p>}<div className="mt-5 flex gap-2"><button type="button" onClick={() => onDelete(task)} className="inline-flex h-11 items-center gap-2 rounded-2xl border border-rose-400/20 px-4 text-sm font-medium text-rose-200 hover:bg-rose-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"><Icon name="trash" size={16} /> 삭제</button><button type="button" onClick={() => onEdit(task)} className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl bg-card-strong px-4 text-sm font-medium text-ink hover:bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="edit" size={16} /> 수정</button></div></div></div></div>;
 }
 
 function TaskDeleteDialog({ task, onClose, onConfirm }: { task: WorkItem | null; onClose: () => void; onConfirm: () => void }) {
   const dialogRef = useDialogFocus(Boolean(task), onClose);
   if (!task) return null;
-  return <div className="fixed inset-0 z-[60] flex items-center justify-center bg-scrim p-5 backdrop-blur-sm"><div ref={dialogRef} role="alertdialog" aria-modal="true" aria-labelledby="task-delete-title" aria-describedby="task-delete-copy" className="w-full max-w-sm rounded-3xl border border-line-strong bg-surface p-6 shadow-2xl shadow-black/60"><span className="flex h-11 w-11 items-center justify-center rounded-3xl bg-rose-500/10 text-rose-200"><Icon name="trash" size={20} /></span><h2 id="task-delete-title" className="mt-5 text-lg font-semibold text-ink">작업을 삭제할까요?</h2><p id="task-delete-copy" className="mt-2 text-sm leading-6 text-muted"><span className="font-medium text-body">{task.title}</span> 작업과 연결 정보가 삭제됩니다.</p><div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} className="h-11 rounded-2xl px-4 text-sm text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">취소</button><button type="button" onClick={onConfirm} className="h-11 rounded-2xl bg-rose-500 px-5 text-sm font-semibold text-ink hover:bg-rose-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300">삭제하기</button></div></div></div>;
+  return <div className="fixed inset-0 z-[60] flex items-center justify-center bg-scrim p-5 backdrop-blur-sm"><div ref={dialogRef} role="alertdialog" aria-modal="true" aria-labelledby="task-delete-title" aria-describedby="task-delete-copy" className="w-full max-w-sm rounded-3xl border border-line-strong bg-surface p-6 shadow-2xl shadow-black/60"><span className="flex h-11 w-11 items-center justify-center rounded-3xl bg-rose-500/10 text-rose-200"><Icon name="trash" size={20} /></span><h2 id="task-delete-title" className="mt-5 text-lg font-semibold text-ink">작업을 삭제할까요?</h2><p id="task-delete-copy" className="mt-2 text-sm leading-6 text-muted"><span className="font-medium text-body">{task.title}</span> 작업이 삭제됩니다.</p><div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} className="h-11 rounded-2xl px-4 text-sm text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">취소</button><button type="button" onClick={onConfirm} className="h-11 rounded-2xl bg-rose-500 px-5 text-sm font-semibold text-ink hover:bg-rose-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300">삭제하기</button></div></div></div>;
 }
 
 function TasksPanel({
   tasks,
-  sideIncomeRecords,
   saving,
   onStatusChange,
   onCreateTask,
@@ -1521,46 +1484,55 @@ function TasksPanel({
   onDeleteTask,
 }: {
   tasks: WorkItem[];
-  sideIncomeRecords: FinanceRecord[];
   saving: boolean;
   onStatusChange: (id: string, status: WorkStatus) => void;
-  onCreateTask: (task: Omit<WorkItem, "id">) => void;
-  onUpdateTask: (task: WorkItem) => void;
+  onCreateTask: (task: Omit<WorkItem, "id">) => Promise<boolean>;
+  onUpdateTask: (task: WorkItem) => Promise<boolean>;
   onDeleteTask: (task: WorkItem) => void;
 }) {
   const [statusFilter, setStatusFilter] = useState("전체 상태");
   const [year, setYear] = useState(currentYear());
+  const [month, setMonth] = useState("");
+  const [validationError, setValidationError] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [detailTask, setDetailTask] = useState<WorkItem | null>(null);
   const [editingTask, setEditingTask] = useState<WorkItem | null>(null);
   const [deletingTask, setDeletingTask] = useState<WorkItem | null>(null);
-  const [draft, setDraft] = useState({ title: "", workDate: currentDate(), course: "", session: "", clientOrSchool: "", amount: "", status: "planned" as WorkStatus });
-  const statusOptions: WorkStatus[] = ["planned", "in-progress", "completed", "sent", "paid"];
-  const visible = tasks.filter((task) => {
-    if (task.workDate && !task.workDate.startsWith(year)) return false;
-    if (statusFilter !== "전체 상태" && taskStatusLabels[task.status] !== statusFilter) return false;
-    return true;
-  });
-  const counts = statusOptions.reduce<Record<string, number>>((result, status) => { result[status] = tasks.filter((task) => task.status === status).length; return result; }, {});
-  const createTask = (event: FormEvent<HTMLFormElement>) => {
+  const [draft, setDraft] = useState({ title: "", dueDate: currentDate(), amount: "", status: "planned" as WorkStatus });
+  const scoped = tasks.filter((task) => isTaskInPeriod(task, year, month));
+  const visible = scoped.filter((task) => statusFilter === "전체 상태" || taskStatusLabels[taskStatus(task)] === statusFilter);
+  const counts = taskStatusOptions.reduce<Record<string, number>>((result, status) => {
+    result[status] = scoped.filter((task) => taskStatus(task) === status).length;
+    return result;
+  }, {});
+  const createTask = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!draft.title.trim()) return;
-    onCreateTask({ title: draft.title.trim(), workDate: draft.workDate, course: draft.course.trim() || undefined, session: draft.session.trim() || undefined, clientOrSchool: draft.clientOrSchool.trim() || undefined, amount: Number(draft.amount) || undefined, status: draft.status, description: "작업 메모를 추가하세요." });
-    setDraft({ title: "", workDate: currentDate(), course: "", session: "", clientOrSchool: "", amount: "", status: "planned" });
+    if (saving) return;
+    if (!draft.title.trim()) {
+      setValidationError("작업명을 입력해주세요.");
+      return;
+    }
+    setValidationError("");
+    if (!await onCreateTask({ title: draft.title.trim(), dueDate: draft.dueDate || undefined, amount: draft.amount === "" ? undefined : Number(draft.amount), status: draft.status })) return;
+    setDraft({ title: "", dueDate: currentDate(), amount: "", status: "planned" });
     setShowForm(false);
   };
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4"><div className="rounded-3xl border border-sky-400/15 bg-sky-500/[0.05] p-4"><p className="text-xs text-sky-200/70">진행 중</p><p className="mt-2 text-xl font-semibold text-sky-100">{(counts["in-progress"] || 0) + (counts.planned || 0)}건</p></div><div className="rounded-3xl border border-violet-400/15 bg-violet-500/[0.05] p-4"><p className="text-xs text-violet-200/70">발송 대기</p><p className="mt-2 text-xl font-semibold text-violet-100">{counts.sent || 0}건</p></div><div className="rounded-3xl border border-emerald-400/15 bg-emerald-500/[0.05] p-4"><p className="text-xs text-emerald-200/70">입금 완료</p><p className="mt-2 text-xl font-semibold text-emerald-100">{counts.paid || 0}건</p></div><div className="rounded-3xl border border-line bg-card p-4"><p className="text-xs text-faint">작업 보수 합계</p><p className="mt-2 text-xl font-semibold tabular-nums text-ink">{currency(tasks.reduce((sum, task) => sum + (task.amount || 0), 0))}</p></div></div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{taskStatusOptions.map((status) => <div key={status} className="rounded-3xl border border-line bg-card p-4"><StatusBadge status={status} /><p className="mt-3 text-xl font-semibold tabular-nums text-ink">{counts[status]}건</p></div>)}</div>
+      <div className="flex items-center justify-between gap-3 rounded-3xl border border-line bg-card px-5 py-4"><span className="text-xs text-faint">작업 보수 합계</span><span className="text-xl font-semibold tabular-nums text-ink">{currency(scoped.reduce((sum, task) => sum + (task.amount || 0), 0))}</span></div>
       <section className="rounded-3xl border border-line bg-card">
-        <div className="flex flex-col gap-4 border-b border-line p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-faint">Work board</p><h2 className="mt-1 text-lg font-semibold text-ink">작업 관리</h2><p className="mt-1 text-xs text-faint">작업을 수입 기록과 연결해 정산 흐름을 놓치지 않아요.</p></div><button type="button" onClick={() => setShowForm((value) => !value)} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-400 px-3 text-xs font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"><Icon name="plus" size={14} /> 작업 추가</button></div><div className="flex flex-wrap items-center gap-2"><select aria-label="작업 연도" value={year} onChange={(event) => setYear(event.target.value)} className="h-9 rounded-xl border border-line bg-field px-3 text-xs text-body outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15"><option>{year}</option><option>{String(Number(year) - 1)}</option><option>{String(Number(year) + 1)}</option></select><SelectField compact="sm" id="work-status" label="작업 상태" value={statusFilter} onChange={setStatusFilter} options={["전체 상태", ...statusOptions.map((status) => taskStatusLabels[status])]} /></div></div>
-        {showForm && <form onSubmit={createTask} className="grid gap-3 border-b border-line bg-emerald-500/[0.025] p-4 sm:grid-cols-2 sm:p-5"><div className="sm:col-span-2"><FieldLabel htmlFor="task-title" required>작업 이름</FieldLabel><input id="task-title" value={draft.title} onChange={(event) => setDraft((value) => ({ ...value, title: event.target.value }))} className={fieldClass} placeholder="예: 강의 자료 정리" /></div><div><FieldLabel htmlFor="task-work-date">작업일</FieldLabel><input id="task-work-date" type="date" value={draft.workDate} onChange={(event) => setDraft((value) => ({ ...value, workDate: event.target.value }))} className={fieldClass} /></div><div><FieldLabel htmlFor="task-course">과정·과목</FieldLabel><input id="task-course" value={draft.course} onChange={(event) => setDraft((value) => ({ ...value, course: event.target.value }))} className={fieldClass} placeholder="예: 기초 과정" /></div><div><FieldLabel htmlFor="task-session">회차</FieldLabel><input id="task-session" value={draft.session} onChange={(event) => setDraft((value) => ({ ...value, session: event.target.value }))} className={fieldClass} placeholder="예: 3회차" /></div><div><FieldLabel htmlFor="task-client">고객·학교</FieldLabel><input id="task-client" value={draft.clientOrSchool} onChange={(event) => setDraft((value) => ({ ...value, clientOrSchool: event.target.value }))} className={fieldClass} placeholder="예: 고객 또는 학교" /></div><div><FieldLabel htmlFor="task-amount">예상 금액</FieldLabel><input id="task-amount" type="number" min="0" value={draft.amount} onChange={(event) => setDraft((value) => ({ ...value, amount: event.target.value }))} className={`${fieldClass} text-right tabular-nums`} placeholder="0" /></div><div><SelectField id="task-new-status" label="상태" value={taskStatusLabels[draft.status]} onChange={(value) => setDraft((previous) => ({ ...previous, status: statusOptions.find((status) => taskStatusLabels[status] === value) || "planned" }))} options={statusOptions.map((status) => taskStatusLabels[status])} /></div><div className="flex items-end justify-end gap-2 sm:col-span-2"><button type="button" onClick={() => setShowForm(false)} className="h-10 rounded-2xl px-4 text-xs text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">취소</button><button type="submit" className="h-10 rounded-2xl bg-emerald-400 px-5 text-xs font-semibold text-slate-950 hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200">작업 저장</button></div></form>}
-        <div className="divide-y divide-line">{visible.map((task) => <div key={task.id} className="flex flex-col gap-3 px-4 py-4 transition hover:bg-card-soft sm:flex-row sm:items-center sm:px-5"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-3xl bg-sky-500/10 text-sky-200"><Icon name="briefcase" size={17} /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-sm font-medium text-body">{task.title}</h3><StatusBadge status={task.status} /></div><p className="mt-1 truncate text-xs text-faint">{[task.course, task.session, task.clientOrSchool].filter(Boolean).join(" · ") || "과정·고객 정보 미입력"}</p><div className="mt-2 flex flex-wrap gap-3 text-[11px] text-faint"><span>{task.workDate ? dateText(task.workDate) : "작업일 미정"}</span>{task.amount ? <span className="tabular-nums text-body">{currency(task.amount)}</span> : null}{task.sentAt ? <span>발송 {dateText(task.sentAt)}</span> : null}{task.sideIncomeTransactionId ? <span className="inline-flex items-center gap-1 text-emerald-300"><Icon name="link" size={12} /> 부수입 연결</span> : null}</div></div><div className="flex items-center gap-2 self-end sm:self-center"><label className="sr-only" htmlFor={`status-${task.id}`}>상태 변경</label><select id={`status-${task.id}`} value={task.status} onChange={(event) => onStatusChange(task.id, event.target.value as WorkStatus)} className="h-9 rounded-xl border border-line bg-field px-2.5 text-xs text-body outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15">{statusOptions.map((status) => <option key={status} value={status}>{taskStatusLabels[status]}</option>)}</select><button type="button" onClick={() => onStatusChange(task.id, task.status === "completed" ? "paid" : "completed")} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-line px-2.5 text-xs text-body transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"><Icon name="check" size={14} /> {task.status === "paid" ? "완료" : "처리"}</button><button type="button" onClick={() => setDetailTask(task)} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-line px-2.5 text-xs text-body transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="more" size={15} /> 상세</button></div></div>)}{!visible.length && <div className="p-4 sm:p-5"><EmptyState icon="briefcase" title="조건에 맞는 작업이 없습니다" description="작업을 추가하거나 조회 조건을 바꿔보세요." action={<button type="button" onClick={() => setShowForm(true)} className="rounded-2xl bg-emerald-400 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200">작업 추가</button>} /></div>}</div>
-        <div className="border-t border-line px-4 py-3 text-[11px] text-faint sm:px-5">총 {visible.length}건 · 상태를 변경하면 바로 저장됩니다.</div>
+        <div className="flex flex-col gap-4 border-b border-line p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-faint">Work board</p><h2 className="mt-1 text-lg font-semibold text-ink">작업 관리</h2><p className="mt-1 text-xs text-faint">마감일과 상태별로 작업을 관리하세요.</p></div><button type="button" onClick={() => setShowForm((value) => !value)} className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-400 px-3 text-xs font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200"><Icon name="plus" size={14} /> 작업 추가</button></div><div className="flex flex-wrap items-center gap-2"><select aria-label="작업 연도" value={year} onChange={(event) => setYear(event.target.value)} className="h-9 rounded-xl border border-line bg-field px-3 text-xs text-body outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15"><option>{year}</option><option>{String(Number(year) - 1)}</option><option>{String(Number(year) + 1)}</option></select><select aria-label="작업 월" value={month} onChange={(event) => setMonth(event.target.value)} className="h-9 rounded-xl border border-line bg-field px-3 text-xs text-body outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15"><option value="">전체 월</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={String(index + 1).padStart(2, "0")}>{index + 1}월</option>)}</select><SelectField compact="sm" id="work-status" label="작업 상태" value={statusFilter} onChange={setStatusFilter} options={["전체 상태", ...taskStatusOptions.map((status) => taskStatusLabels[status])]} /></div></div>
+        {showForm && <form onSubmit={createTask} className="grid gap-3 border-b border-line bg-emerald-500/[0.025] p-4 sm:grid-cols-2 sm:p-5"><div className="sm:col-span-2"><FieldLabel htmlFor="task-title" required>작업명</FieldLabel><input id="task-title" required maxLength={300} value={draft.title} onChange={(event) => setDraft((value) => ({ ...value, title: event.target.value }))} className={fieldClass} placeholder="예: 강의 자료 정리" /></div><div><FieldLabel htmlFor="task-due-date">마감일</FieldLabel><input id="task-due-date" type="date" value={draft.dueDate} onChange={(event) => setDraft((value) => ({ ...value, dueDate: event.target.value }))} className={fieldClass} /></div><div><FieldLabel htmlFor="task-amount">예상 금액</FieldLabel><input id="task-amount" type="number" min="0" max="1000000000000" value={draft.amount} onChange={(event) => setDraft((value) => ({ ...value, amount: event.target.value }))} className={`${fieldClass} text-right tabular-nums`} placeholder="0" /></div><div><SelectField id="task-new-status" label="상태" value={taskStatusLabels[draft.status]} onChange={(value) => setDraft((previous) => ({ ...previous, status: taskStatusOptions.find((status) => taskStatusLabels[status] === value) || "planned" }))} options={taskStatusOptions.map((status) => taskStatusLabels[status])} /></div>{validationError && <p role="alert" className="text-xs text-rose-300 sm:col-span-2">{validationError}</p>}<div className="flex items-end justify-end gap-2 sm:col-span-2"><button type="button" onClick={() => setShowForm(false)} className="h-10 rounded-2xl px-4 text-xs text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">취소</button><button type="submit" disabled={saving} className="h-10 rounded-2xl disabled:opacity-50 bg-emerald-400 px-5 text-xs font-semibold text-slate-950 hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200">작업 저장</button></div></form>}
+        <div className="divide-y divide-line">{visible.map((task) => <div key={task.id} className="flex flex-col gap-3 px-4 py-4 transition hover:bg-card-soft sm:flex-row sm:items-center sm:px-5"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-3xl bg-sky-500/10 text-sky-200"><Icon name="briefcase" size={17} /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-sm font-medium text-body">{task.title}</h3><StatusBadge status={taskStatus(task)} /></div><div className="mt-2 flex flex-wrap gap-3 text-[11px] text-faint"><span>{taskDueDate(task) ? `마감 ${dateText(taskDueDate(task))}` : "마감일 미정"}</span>{task.amount !== undefined ? <span className="tabular-nums text-body">{currency(task.amount)}</span> : null}{task.sentAt ? <span>발송 {dateText(task.sentAt)}</span> : null}</div></div><div className="flex items-center gap-2 self-end sm:self-center"><label className="sr-only" htmlFor={`status-${task.id}`}>상태 변경</label><select id={`status-${task.id}`} value={taskStatus(task)} disabled={saving} onChange={(event) => onStatusChange(task.id, event.target.value as WorkStatus)} className="h-9 rounded-xl border border-line bg-field px-2.5 text-xs text-body outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15">{taskStatus(task) === "cancelled" && <option value="cancelled" disabled>취소</option>}{taskStatusOptions.map((status) => <option key={status} value={status}>{taskStatusLabels[status]}</option>)}</select><button type="button" disabled={saving || taskStatus(task) === "paid"} onClick={() => onStatusChange(task.id, taskNextStatus[taskStatus(task)])} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-line px-2.5 text-xs text-body transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"><Icon name="check" size={14} /> {taskStatusLabels[taskNextStatus[taskStatus(task)]]}</button><button type="button" onClick={() => setDetailTask(task)} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-line px-2.5 text-xs text-body transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="more" size={15} /> 상세</button></div></div>)}{!visible.length && <div className="p-4 sm:p-5"><EmptyState icon="briefcase" title="조건에 맞는 작업이 없습니다" description="작업을 추가하거나 조회 조건을 바꿔보세요." action={<button type="button" onClick={() => setShowForm(true)} className="rounded-2xl bg-emerald-400 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200">작업 추가</button>} /></div>}</div>
+        <div className="border-t border-line px-4 py-3 text-[11px] text-faint sm:px-5">총 {visible.length}건 · 상태 변경은 바로 저장됩니다. 마감일 미정 작업은 전체 월에서 조회하세요.</div>
       </section>
       <TaskDetailModal task={detailTask} onClose={() => setDetailTask(null)} onEdit={(task) => { setDetailTask(null); setEditingTask(task); }} onDelete={(task) => { setDetailTask(null); setDeletingTask(task); }} />
-      <TaskEditModal task={editingTask} sideIncomeRecords={sideIncomeRecords} saving={saving} onClose={() => setEditingTask(null)} onSave={(nextDraft) => { if (!editingTask) return; onUpdateTask({ ...editingTask, title: nextDraft.title.trim(), workDate: nextDraft.workDate || undefined, course: nextDraft.course.trim() || undefined, session: nextDraft.session.trim() || undefined, clientOrSchool: nextDraft.clientOrSchool.trim() || undefined, amount: Number(nextDraft.amount) || undefined, sentAt: nextDraft.sentAt || undefined, memo: nextDraft.note.trim() || undefined, description: nextDraft.note.trim() || undefined, status: nextDraft.status, sideIncomeTransactionId: nextDraft.sideIncomeTransactionId || undefined }); setEditingTask(null); }} />
+      <TaskEditModal task={editingTask} saving={saving} onClose={() => setEditingTask(null)} onSave={(nextDraft) => {
+        if (!editingTask) return Promise.resolve(false);
+        return onUpdateTask({ ...editingTask, title: nextDraft.title.trim(), dueDate: nextDraft.dueDate || undefined, workDate: nextDraft.dueDate ? editingTask.workDate : undefined, amount: nextDraft.amount === "" ? undefined : Number(nextDraft.amount), sentAt: nextDraft.sentAt || undefined, memo: nextDraft.note.trim() || undefined, description: nextDraft.note.trim() || undefined, status: nextDraft.status });
+      }} />
       <TaskDeleteDialog task={deletingTask} onClose={() => setDeletingTask(null)} onConfirm={() => { if (deletingTask) onDeleteTask(deletingTask); setDeletingTask(null); setDetailTask(null); }} />
     </div>
   );
@@ -1827,11 +1799,14 @@ export default function GagebuDashboard() {
 
   const handleCreateTask = async (task: Omit<WorkItem, "id">) => {
     setSaving(true);
+    setError("");
     try {
       await repositories.workItems.upsert({ id: createEntityId("work"), source: "manual", ...task });
       setToast("작업을 추가했습니다.");
+      return true;
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "작업을 저장하지 못했습니다.");
+      return false;
     } finally {
       setSaving(false);
     }
@@ -1857,8 +1832,10 @@ export default function GagebuDashboard() {
     try {
       await repositories.workItems.upsert({ ...task, source: task.source || "manual" });
       setToast("작업을 수정했습니다.");
+      return true;
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "작업을 수정하지 못했습니다.");
+      return false;
     } finally {
       setSaving(false);
     }
@@ -2016,7 +1993,7 @@ export default function GagebuDashboard() {
           {activeView === "overview" && <OverviewPanel records={records} tasks={workItems} month={selectedMonth} loading={loading} onNavigate={setActiveView} onAdd={openAdd} onOpenImport={() => setImportOpen(true)} onOpenDetail={setDetailRecord} />}
           {activeView === "transactions" && <TransactionsPanel records={records} month={selectedMonth} setMonth={setSelectedMonth} year={selectedYear} setYear={setSelectedYear} onAdd={openAdd} onOpenDetail={setDetailRecord} onOpenImport={() => setImportOpen(true)} />}
           {activeView === "assets" && <AssetsPanel records={records} year={selectedYear} setYear={setSelectedYear} onAdd={openAdd} onOpenDetail={setDetailRecord} />}
-          {activeView === "tasks" && <TasksPanel tasks={workItems} sideIncomeRecords={records.filter((record) => record.kind === "side-income")} saving={saving} onStatusChange={handleTaskStatus} onCreateTask={handleCreateTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} />}
+          {activeView === "tasks" && <TasksPanel tasks={workItems} saving={saving} onStatusChange={handleTaskStatus} onCreateTask={handleCreateTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} />}
         </main>
       </div>
 
