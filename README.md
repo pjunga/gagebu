@@ -33,7 +33,7 @@ CI는 Node 22에서 단위 검사, 린트, 타입 검사, 프로덕션 빌드, F
 
 `백업·복원`에서 거래·예금·주식 주문·작업·카테고리 전체를 JSON으로 내려받을 수 있습니다. 복원은 version 1 형식을 검증한 뒤 유형별 추가·유지 건수를 보여줍니다. 같은 ID 또는 가져오기 식별자가 있으면 현재 기록을 유지하고, 없는 기록만 추가합니다. 기존 기록을 삭제하거나 덮어쓰지 않습니다. 일부만 저장된 경우 다시 시도하면 이미 추가된 기록을 건너뜁니다. 복원 파일은 최대 20MB입니다.
 
-카테고리 초기화 표식, 지출 상세, 예금 종료일, 작업 카테고리 ID를 지원하려면 앱 업데이트와 함께 변경된 `firestore.rules`가 필요합니다. 규칙 배포는 별도로 수행합니다.
+카테고리 초기화 표식, 지출 상세, 예금 종료일, 작업 카테고리 ID를 지원하려면 앱 업데이트와 함께 변경된 `firestore.rules`가 필요합니다. 규칙은 `main`에 머지되면 자동 배포됩니다. [Firestore 규칙 배포](#firestore-규칙-배포)를 참고하세요.
 
 ## 데모 페이지
 
@@ -46,7 +46,7 @@ CI는 Node 22에서 단위 검사, 린트, 타입 검사, 프로덕션 빌드, F
 3. Firestore Database를 생성합니다.
 4. `.env.local.example`을 `.env.local`로 복사하고 Web App 설정값과 허용할 Google 이메일을 입력합니다. 여러 명이면 쉼표로 구분합니다.
 5. `firestore.rules`의 허용 이메일 목록도 같은 주소들로 맞춥니다.
-6. Firebase CLI로 `firestore.rules`를 배포합니다.
+6. `firestore.rules`를 배포합니다. 최초 1회는 아래처럼 직접 실행하고, 이후에는 자동 배포에 맡깁니다.
 
 ```bash
 firebase login
@@ -55,6 +55,20 @@ firebase deploy --only firestore:rules
 ```
 
 기존 브라우저 로컬 데이터는 Firebase 연결 후 허용된 Google 사용자 계정으로 최초 1회 자동 이전됩니다.
+
+## Firestore 규칙 배포
+
+Vercel은 Next.js 앱만 배포하므로 `firestore.rules`는 별도 경로로 Firestore에 올라갑니다. 이 배포를 빠뜨리면 앱은 새 필드와 경로에 쓰려 하는데 라이브 규칙이 그 경로를 모르는 상태가 되고, 화면에는 `Missing or insufficient permissions`만 표시됩니다.
+
+`.github/workflows/deploy-firestore-rules.yml`이 이 단계를 대신합니다. `main`에서 `firestore.rules`·`firebase.json`·`.firebaserc`가 바뀌면 실행되고, Actions 탭에서 수동 실행할 수도 있습니다. 배포 전에 `pnpm test:firestore`를 먼저 돌려 에뮬레이터가 거부하는 규칙이 올라가지 않게 막습니다.
+
+동작하려면 저장소 시크릿 `FIREBASE_SERVICE_ACCOUNT`에 서비스 계정 키 JSON 전체를 넣어야 합니다.
+
+1. Firebase Console의 프로젝트 설정 > 서비스 계정에서 새 비공개 키를 생성합니다.
+2. 해당 서비스 계정에 `Firebase Rules Admin` 역할을 부여합니다.
+3. 내려받은 JSON 파일 내용을 그대로 `FIREBASE_SERVICE_ACCOUNT` 시크릿에 붙여넣습니다.
+
+시크릿이 없으면 워크플로가 즉시 실패하므로, 배포가 조용히 건너뛰어지는 일은 없습니다.
 
 ## 개발용 로그인 바이패스
 
