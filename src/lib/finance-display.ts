@@ -90,7 +90,7 @@ function pad(value: number, length = 2): string {
   return String(value).padStart(length, "0");
 }
 
-function toLocalIsoDate(date: Date): string {
+export function localDate(date = new Date()): string {
   return `${pad(date.getFullYear(), 4)}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
 }
 
@@ -102,7 +102,7 @@ export function addMonths(dateValue: string, amount: number): string {
   const date = new Date(`${dateValue}T00:00:00`);
   if (Number.isNaN(date.getTime())) return dateValue;
   date.setMonth(date.getMonth() + amount);
-  return toLocalIsoDate(date);
+  return localDate(date);
 }
 
 export type AssetStatus = "active" | "maturity-soon" | "matured" | "closed";
@@ -136,6 +136,13 @@ export function taskStatus(task: Pick<WorkItem, "status" | "sentAt">): keyof typ
 
 export function taskDueDate(task: Pick<WorkItem, "dueDate" | "workDate">): string {
   return task.dueDate || task.workDate || "";
+}
+
+export function sortTasksByDeadline<T extends WorkItem>(tasks: T[]): T[] {
+  const finished = (task: T) => Number(["paid", "cancelled"].includes(taskStatus(task)));
+  return [...tasks].sort((left, right) => finished(left) - finished(right)
+    || (taskDueDate(left) || "9999-12-31").localeCompare(taskDueDate(right) || "9999-12-31")
+    || left.title.localeCompare(right.title, "ko") || left.id.localeCompare(right.id));
 }
 
 /** Undated tasks remain accessible under all months, never an arbitrary month. */

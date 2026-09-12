@@ -16,6 +16,7 @@ import {
   LOCAL_STORAGE_KEYS,
 } from "./local-repository";
 import type { DomainRepositories } from "./repository-types";
+import { localDate } from "./finance-display";
 
 export interface DemoDataset {
   transactions: Transaction[];
@@ -369,7 +370,7 @@ export function buildDemoData(today: string): DemoDataset {
 
 /** Repositories pre-filled with the dummy dataset, backed by memory only. */
 export function createDemoRepositories(
-  today = new Date().toISOString().slice(0, 10),
+  today = localDate(),
 ): DomainRepositories {
   const data = buildDemoData(today);
   const storage = createMemoryStorage();

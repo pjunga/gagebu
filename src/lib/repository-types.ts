@@ -43,14 +43,19 @@ export interface CollectionRepository<T extends BaseEntity> {
    * holds the rows that were stored, in no guaranteed order.
    */
   upsertMany(items: T[]): Promise<T[]>;
+  /** Adds absent IDs/fingerprints only. Existing records are never replaced. */
+  insertMissing(items: T[]): Promise<T[]>;
   remove(id: string): Promise<void>;
   subscribe(
     onData: RepositoryListener<T>,
     onError?: RepositoryErrorListener,
+    onReady?: () => void,
   ): Promise<Unsubscribe>;
 }
 
 export interface DomainRepositories {
+  initializeWorkCategories(): Promise<void>;
+  renameWorkCategory(id: string, name: string): Promise<void>;
   transactions: CollectionRepository<EntityByKind["transaction"]>;
   savingsAccounts: CollectionRepository<EntityByKind["savingsAccount"]>;
   stockOrders: CollectionRepository<EntityByKind["stockOrder"]>;

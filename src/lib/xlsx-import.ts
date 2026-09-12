@@ -20,6 +20,7 @@ export interface ImportWarning {
   sheet: string;
   row?: number;
   message: string;
+  skipped?: boolean;
 }
 
 export interface ImportRecord<T extends DomainEntity = DomainEntity> {
@@ -50,6 +51,7 @@ export interface XlsxImportPreview {
   warnings: ImportWarning[];
   duplicateFingerprints: string[];
   skippedRows: ImportWarning[];
+  skippedSheets: ImportWarning[];
   counts: {
     transactions: number;
     savingsAccounts: number;
@@ -58,6 +60,7 @@ export interface XlsxImportPreview {
     duplicates: number;
     warnings: number;
     skippedRows: number;
+    skippedSheets: number;
   };
 }
 
@@ -223,11 +226,9 @@ function columnName(index: number): string {
 
 function warning(
   warnings: ImportWarning[],
-  options: XlsxImportOptions,
   item: ImportWarning,
 ): void {
-  const max = options.maxWarnings ?? 100;
-  if (warnings.length < max) warnings.push(item);
+  warnings.push(item);
 }
 
 function cell(row: WorkbookCell[] | undefined, index: number): WorkbookCell {
@@ -457,10 +458,10 @@ function parseSavingsSheet(
       continue;
     }
     if (!accountName || /^[-—–]+$/.test(accountName) || /^(?:주식|주문|stock)$/i.test(accountName)) {
-      warning(warnings, options, {
+      warning(warnings, {
         sheet,
         row: rowIndex + 1,
-        message: "상품명이 없어 적금 행을 건너뛰었습니다.",
+        skipped: true, message: "상품명이 없어 적금 행을 건너뛰었습니다.",
       });
       continue;
     }
@@ -537,19 +538,19 @@ function parseStockSheet(
       principalOrBalance !== null;
     if (!hasStockValue) continue;
     if (!ticker || unitPrice === null || quantity === null || unitPrice <= 0 || quantity <= 0) {
-      warning(warnings, options, {
+      warning(warnings, {
         sheet,
         row: rowIndex + 1,
-        message: "종목, 주문 단가, 수량을 모두 해석하지 못해 주식 주문 행을 건너뛰었습니다.",
+        skipped: true, message: "종목, 주문 단가, 수량을 모두 해석하지 못해 주식 주문 행을 건너뛰었습니다.",
       });
       continue;
     }
     const totalAmount = unitPrice * quantity;
     if (!Number.isFinite(totalAmount) || totalAmount > Number.MAX_SAFE_INTEGER) {
-      warning(warnings, options, {
+      warning(warnings, {
         sheet,
         row: rowIndex + 1,
-        message: "주식 주문 총액이 안전한 숫자 범위를 벗어나 행을 건너뛰었습니다.",
+        skipped: true, message: "주식 주문 총액이 안전한 숫자 범위를 벗어나 행을 건너뛰었습니다.",
       });
       continue;
     }
@@ -578,7 +579,7 @@ function parseStockSheet(
     // A provided total is retained only as a consistency signal; the domain
     // total remains the auditable unit-price × quantity calculation.
     if (providedTotal !== null && providedTotal !== totalAmount) {
-      warning(warnings, options, {
+      warning(warnings, {
         sheet,
         row: rowIndex + 1,
         message: "주문 총액이 단가와 수량의 곱과 달라 자동 계산값을 사용했습니다.",
@@ -717,7 +718,7 @@ function parseSalarySheet(
       if (amount !== null) numericCells.push({ column, amount, header: headerForColumn(rows, column, rowIndex) });
     }
     if (!numericCells.length) {
-      warning(warnings, options, { sheet, row: rowIndex + 1, message: "급여 금액을 찾지 못해 행을 건너뛰었습니다." });
+      warning(warnings, { sheet, row: rowIndex + 1, skipped: true, message: "급여 금액을 찾지 못해 행을 건너뛰었습니다." });
       continue;
     }
     const net = numericCells.find((item) => /실수령|세후|순수령|net/.test(normalizeHeader(item.header)));
@@ -807,10 +808,10 @@ function parseWorkItemsSheet(
       .filter(Boolean);
     if (!sentAt && !courseNumber && !session && !clientOrSchool && !title && amount === null) continue;
     if (!title && !courseNumber && !session && amount === null) {
-      warning(warnings, options, {
+      warning(warnings, {
         sheet,
         row: rowIndex + 1,
-        message: "작업 제목과 금액을 찾지 못해 행을 건너뛰었습니다.",
+        skipped: true, message: "작업 제목과 금액을 찾지 못해 행을 건너뛰었습니다.",
       });
       continue;
     }
@@ -886,7 +887,8 @@ export function previewWorkbookRows(
   options: XlsxImportOptions = {},
 ): XlsxImportPreview {
   const warnings: ImportWarning[] = [];
-  const skippedRows: ImportWarning[] = [];
+  const skippedSheets: ImportWarning[] = [];
+  let duplicateRows = 0;
   const seen = new Set(options.existingFingerprints ?? []);
   const duplicateFingerprints = new Set<string>();
   const records: ImportRecord[] = [];
@@ -912,12 +914,12 @@ export function previewWorkbookRows(
     } else if (normalized === "월급" || normalized.includes("월급")) {
       sheetRecords = parseSalarySheet(rows, sheet, options, warnings);
     } else {
-      skippedRows.push({ sheet, message: "지원하지 않는 시트라 건너뛰었습니다." });
+      skippedSheets.push({ sheet, message: "지원하지 않는 시트라 건너뛰었습니다." });
       continue;
     }
     for (const record of sheetRecords) {
       const duplicate = seen.has(record.fingerprint);
-      if (duplicate) duplicateFingerprints.add(record.fingerprint);
+      if (duplicate) { duplicateFingerprints.add(record.fingerprint); duplicateRows++; }
       const unique = uniqueRecords([record], seen, duplicateFingerprints)[0];
       if (!unique) continue;
       records.push(unique);
@@ -934,17 +936,19 @@ export function previewWorkbookRows(
     savingsAccounts,
     stockOrders,
     workItems,
-    warnings,
+    warnings: warnings.slice(0, options.maxWarnings ?? 100),
     duplicateFingerprints: [...duplicateFingerprints],
-    skippedRows,
+    skippedRows: warnings.filter(item => item.skipped),
+    skippedSheets,
     counts: {
       transactions: transactions.length,
       savingsAccounts: savingsAccounts.length,
       stockOrders: stockOrders.length,
       workItems: workItems.length,
-      duplicates: duplicateFingerprints.size,
+      duplicates: duplicateRows,
       warnings: warnings.length,
-      skippedRows: skippedRows.length,
+      skippedRows: new Set(warnings.filter(item => item.skipped).map(item => `${item.sheet}:${item.row}`)).size,
+      skippedSheets: skippedSheets.length,
     },
   };
 }

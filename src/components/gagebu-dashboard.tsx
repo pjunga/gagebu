@@ -2,18 +2,15 @@
 
 import { AuthAccountControls } from "@/components/auth-gate";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import {
   createEntityId,
   DEFAULT_WORK_CATEGORY,
-  workCategorySeedId,
   sortWorkCategories,
-  WORK_CATEGORIES,
   type WorkCategory,
   type WorkCategoryRecord,
   type SavingsAccount,
-  type SavingsAssetType,
   type StockOrder,
   type RecordSource,
   type Transaction as DomainTransaction,
@@ -26,7 +23,8 @@ import {
   previousMonthOf,
   relativeDay,
   totalByCurrency,
-  addMonths,
+  localDate,
+  sortTasksByDeadline,
   savingsStatus,
   type AssetStatus,
   isTaskInPeriod,
@@ -36,6 +34,8 @@ import {
   taskStatusLabels,
   taskStatusOptions,
 } from "@/lib/finance-display";
+import { defaultDraft, recordToDraft, draftAmount, expenseCategories, type EntryKind, type EntryDraft, type FinanceRecord } from "@/lib/finance-entry";
+import { workCategoryFor, workCategoryName } from "@/lib/work-categories";
 import { createDemoRepositories } from "@/lib/demo-data";
 import { isFirebaseConfigured } from "@/lib/firebase";
 import { createDataRepositories } from "@/lib/repositories";
@@ -46,77 +46,15 @@ import {
 } from "@/lib/xlsx-import";
 import { Icon, type IconName } from "./icons";
 import ThemeToggle from "./theme-toggle";
+import { FormError, useDialogFocus } from "./dialog";
+import BackupModal from "./backup-modal";
 
 export type ViewKey = "overview" | "transactions" | "assets" | "tasks";
-export type EntryKind =
-  | "expense"
-  | "salary"
-  | "side-income"
-  | "savings"
-  | "stock-order";
 export type { AssetStatus };
 export type WorkStatus = ReturnType<typeof taskStatus>;
 
-export type FinanceRecord = {
-  id: string;
-  kind: EntryKind;
-  title: string;
-  amount: number;
-  date: string;
-  category?: string;
-  source?: string;
-  institution?: string;
-  account?: string;
-  maturityDate?: string;
-  status?: AssetStatus;
-  note?: string;
-  assetType?: SavingsAssetType;
-  monthlyContribution?: number;
-  principal?: number;
-  balance?: number;
-  principalOrBalance?: number;
-  payMonth?: string;
-  paymentDate?: string;
-  netAmount?: number;
-  count?: number;
-  workItemId?: string;
-  side?: "buy" | "sell";
-  currency?: string;
-  ticker?: string;
-  quantity?: number;
-  unitPrice?: number;
-};
-
 type WorkItem = DomainWorkItem;
-
-export type EntryDraft = {
-  kind: EntryKind;
-  title: string;
-  amount: string;
-  date: string;
-  category: string;
-  source: string;
-  institution: string;
-  account: string;
-  maturityDate: string;
-  assetType: SavingsAssetType;
-  monthlyContribution: string;
-  balance: string;
-  status: AssetStatus;
-  note: string;
-  payMonth: string;
-  paymentDate: string;
-  netAmount: string;
-  count: string;
-  workItemId: string;
-  principalOrBalance: string;
-  side: "buy" | "sell";
-  ticker: string;
-  quantity: string;
-  unitPrice: string;
-};
-
-const currentDate = () => new Date().toISOString().slice(0, 10);
+const currentDate = localDate;
 const currentMonth = () => currentDate().slice(0, 7);
 const currentYear = () => currentDate().slice(0, 4);
 
@@ -152,19 +90,6 @@ const entrySelectedBorders: Record<EntryKind, string> = {
   "stock-order": "border-violet-400/60",
 };
 
-const expenseCategories = [
-  "식비",
-  "교통",
-  "주거·관리비",
-  "건강·의료",
-  "문화·여가",
-  "쇼핑",
-  "교육",
-  "기타",
-];
-
-const sourceOptions = ["전체 출처", "급여", "프리랜스", "환급", "기타 수입"];
-const institutionOptions = ["전체 기관", "주거래 은행", "저축 은행", "증권사"];
 const assetStatusLabels: Record<AssetStatus, string> = {
   active: "운영 중",
   "maturity-soon": "만기 임박",
@@ -206,69 +131,6 @@ const monthText = (value: string) => {
 /** Falls back to the full label rather than printing "0월" for an empty input. */
 const shortMonth = (value: string) =>
   /^\d{4}-\d{2}$/.test(value) ? `${Number(value.slice(5, 7))}월` : monthText(value);
-
-/**
- * The salary form collects the net pay in its own field, so reading
- * draft.amount there saves a zero. Validation and saving share this.
- */
-const draftAmount = (draft: EntryDraft): number =>
-  draft.kind === "stock-order"
-    ? Number(draft.quantity) * Number(draft.unitPrice)
-    : Number(draft.kind === "salary" ? draft.netAmount : draft.amount);
-
-const defaultDraft = (kind: EntryKind = "expense"): EntryDraft => ({
-  kind,
-  title: "",
-  amount: "",
-  date: currentDate(),
-  category: expenseCategories[0],
-  source: "",
-  institution: "",
-  account: "",
-  maturityDate: addMonths(currentDate(), 12),
-  assetType: "deposit",
-  monthlyContribution: "",
-  balance: "",
-  status: "active",
-  note: "",
-  payMonth: currentMonth(),
-  paymentDate: currentDate(),
-  netAmount: "",
-  count: "1",
-  workItemId: "",
-  principalOrBalance: "",
-  side: "buy",
-  ticker: "",
-  quantity: "",
-  unitPrice: "",
-});
-
-const recordToDraft = (record: FinanceRecord): EntryDraft => ({
-  kind: record.kind,
-  title: record.title,
-  amount: String(record.principal ?? record.amount),
-  date: record.date,
-  category: record.category ?? expenseCategories[0],
-  source: record.source ?? "",
-  institution: record.institution ?? "",
-  account: record.account ?? "",
-  maturityDate: record.maturityDate ?? addMonths(record.date, 12),
-  assetType: record.assetType ?? "deposit",
-  monthlyContribution: record.monthlyContribution ? String(record.monthlyContribution) : "",
-  balance: record.balance ? String(record.balance) : "",
-  status: record.status ?? "active",
-  note: record.note ?? "",
-  payMonth: record.payMonth ?? record.date.slice(0, 7),
-  paymentDate: record.paymentDate ?? record.date,
-  netAmount: record.netAmount ? String(record.netAmount) : String(record.amount),
-  count: record.count ? String(record.count) : "1",
-  workItemId: record.workItemId ?? "",
-  principalOrBalance: record.principalOrBalance ? String(record.principalOrBalance) : "",
-  side: record.side ?? "buy",
-  ticker: record.ticker ?? "",
-  quantity: record.quantity ? String(record.quantity) : "",
-  unitPrice: record.unitPrice ? String(record.unitPrice) : "",
-});
 
 function toneClasses(tone: string, soft = false) {
   const map: Record<string, string> = {
@@ -363,72 +225,6 @@ function LoadingCard() {
       <div className="mt-3 h-2 w-24 rounded bg-card" />
     </div>
   );
-}
-
-/** Keeps keyboard users inside each dialog and returns focus to its opener. */
-function useDialogFocus(open: boolean, onClose: () => void) {
-  const dialogRef = useRef<HTMLDivElement | null>(null);
-  const closeRef = useRef(onClose);
-  useEffect(() => {
-    closeRef.current = onClose;
-  }, [onClose]);
-
-  useEffect(() => {
-    if (!open) return;
-    const previous = document.activeElement as HTMLElement | null;
-    const dialog = dialogRef.current;
-    const focusableSelector =
-      'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
-    const focusFirst = () => {
-      const first = dialog?.querySelector<HTMLElement>(focusableSelector);
-      first?.focus();
-    };
-    const frame = window.requestAnimationFrame(focusFirst);
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        closeRef.current();
-        return;
-      }
-      if (event.key !== "Tab" || !dialog) return;
-      const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(focusableSelector));
-      if (!focusable.length) {
-        event.preventDefault();
-        return;
-      }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      const active = document.activeElement;
-      if (active && !dialog.contains(active)) {
-        // Another dialog stacked on top owns the focus; leave it alone, or two
-        // traps fight over every Tab and neither ever advances.
-        if (active.closest('[aria-modal="true"]')) return;
-        // Focus fell out of the dialog — a focused control was unmounted or
-        // disabled. Bring it back instead of letting Tab leave the dialog.
-        event.preventDefault();
-        (event.shiftKey ? last : first).focus();
-        return;
-      }
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    };
-    document.addEventListener("keydown", onKeyDown);
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      window.cancelAnimationFrame(frame);
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = previousOverflow;
-      if (previous?.isConnected) previous.focus();
-    };
-  }, [open]);
-
-  return dialogRef;
 }
 
 function EmptyState({
@@ -548,7 +344,7 @@ function SelectField({
   compact?: boolean | "sm";
 }) {
   return (
-    <div className={compact ? "relative min-w-0 flex-1 md:w-[138px] md:flex-none" : "relative"}>
+    <div className={compact ? "relative min-w-0 flex-1 md:w-40 md:max-w-full md:flex-none" : "relative"}>
       {compact ? (
         <label htmlFor={id} className="sr-only">{label}</label>
       ) : (
@@ -579,6 +375,7 @@ function EntryModal({
   editingId,
   workItems,
   saving,
+  error,
   onClose,
   onSave,
 }: {
@@ -587,6 +384,7 @@ function EntryModal({
   editingId?: string | null;
   workItems: WorkItem[];
   saving: boolean;
+  error: string;
   onClose: () => void;
   onSave: (draft: EntryDraft) => void;
 }) {
@@ -622,6 +420,7 @@ function EntryModal({
 
   const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (saving) return;
     const amount = draftAmount(draft);
     if (!draft.title.trim()) {
       setValidationError("내역 이름을 입력해주세요.");
@@ -631,11 +430,11 @@ function EntryModal({
       setValidationError("날짜를 선택해주세요.");
       return;
     }
-    if (!amount || amount <= 0) {
+    if (!Number.isFinite(amount) || amount < 0 || (amount === 0 && draft.kind !== "savings") || amount > 1_000_000_000_000) {
       setValidationError(
         draft.kind === "stock-order"
           ? "수량과 주문 단가를 0보다 크게 입력해주세요."
-          : "금액을 0보다 크게 입력해주세요.",
+          : draft.kind === "savings" ? "금액을 0 이상으로 입력해주세요." : "금액을 0보다 크게 입력해주세요.",
       );
       return;
     }
@@ -676,7 +475,7 @@ function EntryModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="overflow-y-auto px-5 py-5 sm:px-7 sm:py-6">
+        <form onSubmit={handleSubmit} className="overflow-y-auto px-5 py-5 sm:px-7 sm:py-6"><fieldset disabled={saving} className="min-w-0">
           <fieldset>
             <legend className="text-xs font-medium text-body">기록 유형</legend>
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
@@ -752,7 +551,7 @@ function EntryModal({
               <div>
                 <p className="text-xs font-medium text-body">주문 금액</p>
                 <div className="mt-2 flex h-11 items-center justify-end rounded-2xl border border-line bg-field px-3.5 text-sm font-semibold tabular-nums text-violet-200">
-                  {stockTotal > 0 ? currency(stockTotal) : "수량 × 주문 단가"}
+                  {stockTotal > 0 ? currency(stockTotal, draft.currency) : "수량 × 주문 단가"}
                 </div>
               </div>
             )}
@@ -852,6 +651,7 @@ function EntryModal({
 
             {draft.kind === "stock-order" && (
               <>
+                <div className="sm:col-span-2"><SelectField id="stock-currency" label="통화" value={draft.currency} onChange={value => update("currency", value)} options={[...new Set([draft.currency, "KRW", "USD", "EUR", "JPY"])]} /></div>
                 <div>
                   <FieldLabel htmlFor="stock-institution">증권사</FieldLabel>
                   <input id="stock-institution" value={draft.institution} onChange={(event) => update("institution", event.target.value)} className={fieldClass} placeholder="예: 증권사" />
@@ -865,15 +665,15 @@ function EntryModal({
                   <input id="stock-quantity" type="number" min="0" step="1" value={draft.quantity} onChange={(event) => update("quantity", event.target.value)} className={`${fieldClass} text-right tabular-nums`} placeholder="0" />
                 </div>
                 <div>
-                  <FieldLabel htmlFor="stock-unit-price" required>주문 단가</FieldLabel>
+                  <FieldLabel htmlFor="stock-unit-price" required>주문 단가 ({draft.currency})</FieldLabel>
                   <div className="relative">
                     <input id="stock-unit-price" type="number" min="0" step="any" value={draft.unitPrice} onChange={(event) => update("unitPrice", event.target.value)} className={`${fieldClass} pr-12 text-right tabular-nums`} placeholder="0" />
-                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">원</span>
+                    <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{draft.currency === "KRW" ? "원" : draft.currency}</span>
                   </div>
                 </div>
                 <div>
                   <FieldLabel htmlFor="stock-principal">주문 후 원금·잔액</FieldLabel>
-                  <div className="relative"><input id="stock-principal" type="number" min="0" step="1" value={draft.principalOrBalance} onChange={(event) => update("principalOrBalance", event.target.value)} className={`${fieldClass} pr-12 text-right tabular-nums`} placeholder="선택 입력" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">원</span></div>
+                  <div className="relative"><input id="stock-principal" type="number" min="0" step="1" value={draft.principalOrBalance} onChange={(event) => update("principalOrBalance", event.target.value)} className={`${fieldClass} pr-12 text-right tabular-nums`} placeholder="선택 입력" /><span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-faint">{draft.currency === "KRW" ? "원" : draft.currency}</span></div>
                 </div>
                 <fieldset className="sm:col-span-2">
                   <legend className="text-xs font-medium text-body">주문 구분</legend>
@@ -902,6 +702,7 @@ function EntryModal({
             </p>
           )}
 
+          <FormError message={error} />
           <div className="mt-6 flex flex-col-reverse gap-2 border-t border-line pt-5 sm:flex-row sm:justify-end">
             <button type="button" onClick={onClose} className="h-11 rounded-2xl px-5 text-sm font-medium text-muted transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">취소</button>
             <button type="submit" disabled={saving} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-emerald-400 px-6 text-sm font-semibold text-slate-950 transition hover:bg-emerald-300 disabled:cursor-wait disabled:opacity-60 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200">
@@ -909,7 +710,7 @@ function EntryModal({
               {saving ? "저장 중…" : isEditing ? "변경 저장" : "내역 저장"}
             </button>
           </div>
-        </form>
+        </fieldset></form>
       </div>
     </div>
   );
@@ -926,19 +727,7 @@ function DetailModal({
   onEdit: (record: FinanceRecord) => void;
   onDelete: (record: FinanceRecord) => void;
 }) {
-  useEffect(() => {
-    if (!record) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      document.body.style.overflow = previous;
-    };
-  }, [onClose, record]);
+  const dialogRef = useDialogFocus(Boolean(record), onClose);
 
   if (!record) return null;
   const detailRows = [
@@ -960,7 +749,7 @@ function DetailModal({
 
   return (
     <div className="fixed inset-0 z-40 flex items-end justify-center bg-scrim p-0 backdrop-blur-sm sm:items-center sm:p-6">
-      <div role="dialog" aria-modal="true" aria-labelledby="detail-dialog-title" className="w-full max-w-lg overflow-hidden rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:rounded-3xl">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="detail-dialog-title" className="w-full max-w-lg overflow-hidden rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:rounded-3xl">
         <div className="flex items-start justify-between border-b border-line px-5 py-5 sm:px-7">
           <div className="min-w-0">
             <KindBadge kind={record.kind} />
@@ -993,31 +782,29 @@ function DetailModal({
 
 function DeleteDialog({
   record,
+  saving,
+  error,
   onClose,
   onConfirm,
 }: {
   record: FinanceRecord | null;
+  saving: boolean;
+  error: string;
   onClose: () => void;
   onConfirm: () => void;
 }) {
-  useEffect(() => {
-    if (!record) return;
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
-  }, [onClose, record]);
+  const dialogRef = useDialogFocus(Boolean(record), onClose);
   if (!record) return null;
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-scrim p-5 backdrop-blur-sm">
-      <div role="alertdialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-copy" className="w-full max-w-sm rounded-3xl border border-line-strong bg-surface p-6 shadow-2xl shadow-black/60">
+      <div ref={dialogRef} role="alertdialog" aria-modal="true" aria-labelledby="delete-title" aria-describedby="delete-copy" className="w-full max-w-sm rounded-3xl border border-line-strong bg-surface p-6 shadow-2xl shadow-black/60">
         <span className="flex h-11 w-11 items-center justify-center rounded-3xl bg-rose-500/10 text-rose-200"><Icon name="trash" size={20} /></span>
         <h2 id="delete-title" className="mt-5 text-lg font-semibold text-ink">내역을 삭제할까요?</h2>
         <p id="delete-copy" className="mt-2 text-sm leading-6 text-muted"><span className="font-medium text-body">{record.title}</span> 내역을 삭제하면 다시 복구할 수 없습니다.</p>
+        <FormError message={error} />
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button type="button" onClick={onClose} className="h-11 rounded-2xl px-4 text-sm font-medium text-muted transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">취소</button>
-          <button type="button" onClick={onConfirm} className="h-11 rounded-2xl bg-rose-500 px-5 text-sm font-semibold text-ink transition hover:bg-rose-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300">삭제하기</button>
+          <button type="button" onClick={onClose} disabled={saving} className="h-11 rounded-2xl px-4 text-sm font-medium text-muted transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">취소</button>
+          <button type="button" onClick={onConfirm} disabled={saving} className="h-11 rounded-2xl bg-rose-500 px-5 text-sm font-semibold text-ink transition hover:bg-rose-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300">삭제하기</button>
         </div>
       </div>
     </div>
@@ -1075,7 +862,7 @@ function ImportModal({
     pickRef.current = pick;
     setParsing(true);
     try {
-      const parsed = await previewXlsxImport(selected, { existingFingerprints });
+      const parsed = await previewXlsxImport(selected, { existingFingerprints, maxWarnings: Infinity });
       if (pick !== pickRef.current) return;
       setFile(selected);
       setPreview({ ...parsed, fileName: selected.name });
@@ -1108,7 +895,7 @@ function ImportModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-scrim p-0 backdrop-blur-sm sm:items-center sm:p-6">
-      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="import-dialog-title" className="w-full max-w-xl overflow-hidden rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:rounded-3xl">
+      <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="import-dialog-title" className="max-h-[94dvh] w-full max-w-xl overflow-y-auto rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:rounded-3xl">
         <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-5 sm:px-7">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-300/80">데이터 가져오기</p>
@@ -1146,13 +933,18 @@ function ImportModal({
                 <button type="button" onClick={backToSelect} disabled={importing} className="-mr-2 inline-flex min-h-11 items-center rounded-xl px-2 text-xs text-sky-200 underline-offset-2 hover:underline disabled:opacity-40 disabled:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 lg:mr-0 lg:min-h-0 lg:px-0">변경</button>
               </div>
               <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                {[["인식 행", `${preview.records.length}건`], ["인식 시트", `${preview.sheetNames.length}개`], ["건너뛸 행", `${preview.counts.skippedRows}건`], ["중복 의심", `${preview.counts.duplicates}건`]].map(([label, value]) => <div key={label} className="rounded-3xl border border-line bg-card-soft px-3 py-3"><p className="text-[11px] text-faint">{label}</p><p className="mt-1 text-base font-semibold text-ink">{value}</p></div>)}
+                {[["인식 행", `${preview.records.length}건`], ["인식 시트", `${preview.sheetNames.length - preview.counts.skippedSheets}개`], ["제외 행", `${preview.counts.skippedRows}건`], ["제외 시트", `${preview.counts.skippedSheets}개`], ["중복 의심", `${preview.counts.duplicates}건`]].map(([label, value]) => <div key={label} className="rounded-3xl border border-line bg-card-soft px-3 py-3"><p className="text-[11px] text-faint">{label}</p><p className="mt-1 text-base font-semibold text-ink">{value}</p></div>)}
               </div>
-              <div className="mt-4 rounded-3xl border border-line px-4 py-4">
-                <p className="text-xs font-medium text-body">인식된 시트</p>
-                <div className="mt-2 flex flex-wrap gap-2">{preview.sheetNames.map((sheet) => <span key={sheet} className="rounded-xl bg-emerald-500/10 px-2.5 py-1.5 text-xs text-emerald-200">{sheet}</span>)}</div>
-                <p className="mt-3 text-xs leading-5 text-faint">지원되는 시트의 데이터만 저장 대상으로 포함하고, 형식이 맞지 않는 행은 건너뜁니다.</p>
-                {!!preview.warnings.length && <p className="mt-2 text-xs text-amber-200">주의 {preview.warnings.length}건 · 일부 행을 확인해주세요.</p>}
+              <div className="mt-4 rounded-3xl border border-line p-4">
+                <p className="text-xs font-medium text-body">유형별 저장 대상</p>
+                <p className="mt-2 text-xs leading-6 text-muted">수입·지출 {preview.counts.transactions}건 · 예금·적금 {preview.counts.savingsAccounts}건 · 주식 {preview.counts.stockOrders}건 · 작업 {preview.counts.workItems}건</p>
+                <div className="mt-3 overflow-x-auto"><table className="w-full text-left text-xs"><caption className="py-2 text-left text-faint">저장 대상 앞 10건</caption><thead><tr><th className="py-2">시트·행</th><th>내역</th><th className="text-right">금액</th></tr></thead><tbody>{preview.records.slice(0, 10).map(record => {
+                  const item = record.entity;
+                  const title = "type" in item ? item.memo : "accountName" in item ? item.accountName : "ticker" in item ? item.name || item.ticker : "title" in item ? item.title : item.name;
+                  const amount = "amount" in item ? item.amount : "totalAmount" in item ? item.totalAmount : "balance" in item ? item.balance ?? item.principal : undefined;
+                  return <tr key={record.fingerprint} className="border-t border-line"><td className="py-2 pr-2">{record.sheet} · {record.row}행</td><td className="break-all py-2 pr-2">{title}</td><td className="py-2 text-right tabular-nums">{amount === undefined ? "—" : currency(amount, "currency" in item ? item.currency : undefined)}</td></tr>;
+                })}</tbody></table></div>
+                {(preview.warnings.length > 0 || preview.skippedSheets.length > 0) && <details className="mt-4"><summary className="min-h-11 cursor-pointer py-3 text-sm text-amber-200">경고 {preview.counts.warnings}건 · 제외 시트 {preview.counts.skippedSheets}개 확인</summary><ul className="max-h-48 space-y-2 overflow-y-auto text-xs leading-5 text-body">{[...preview.skippedSheets, ...preview.warnings].map((warning, index) => <li key={index}>{warning.sheet}{warning.row ? ` · ${warning.row}행` : ""}: {warning.message}</li>)}</ul></details>}
               </div>
               <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-3xl border border-amber-400/20 bg-amber-500/[0.06] px-4 py-3.5">
                 <input type="checkbox" checked={confirmed} disabled={importing} onChange={(event) => setConfirmed(event.target.checked)} className="mt-0.5 h-4 w-4 rounded border-line-strong bg-surface accent-emerald-400" />
@@ -1222,8 +1014,8 @@ function OverviewPanel({
   const previousRecords = records.filter((record) => record.date.startsWith(previousMonth));
   const previousNet = sumIncome(previousRecords) - sumExpense(previousRecords);
   const netChange = income - expense - previousNet;
-  const assets = records.filter((record) => ["savings", "stock-order"].includes(record.kind));
-  const netAssets = totalByCurrency(assets).base;
+  const assets = records.filter((record) => record.kind === "savings" && record.status !== "closed");
+  const savingsBalance = totalByCurrency(assets).base;
   const categoryTotals = monthRecords.filter((record) => record.kind === "expense").reduce<Record<string, number>>((result, record) => {
     const category = record.category || "기타";
     result[category] = (result[category] || 0) + record.amount;
@@ -1232,7 +1024,7 @@ function OverviewPanel({
   const categories = Object.entries(categoryTotals).sort(([, left], [, right]) => right - left).slice(0, 4);
   const maxCategory = categories[0]?.[1] ?? 0;
   const maturities = records.filter((record) => record.kind === "savings" && record.maturityDate && record.status !== "closed").sort((left, right) => (left.maturityDate || "").localeCompare(right.maturityDate || "")).slice(0, 3);
-  const ongoing = tasks.filter((task) => taskStatus(task) !== "paid" && taskStatus(task) !== "cancelled").slice(0, 3);
+  const ongoing = sortTasksByDeadline(tasks.filter(task => taskStatus(task) !== "paid" && taskStatus(task) !== "cancelled")).slice(0, 3);
 
   return (
     <div className="space-y-6">
@@ -1241,7 +1033,7 @@ function OverviewPanel({
           <StatCard label={`${monthText(month)} 수입`} shortLabel={`${shortMonth(month)} 수입`} value={compactCurrency(income)} subtext={currency(income)} hint="전월 대비 확인" tone="emerald" icon="arrow-up" onClick={() => onNavigate("transactions")} />
           <StatCard label={`${monthText(month)} 지출`} shortLabel={`${shortMonth(month)} 지출`} value={compactCurrency(expense)} subtext={currency(expense)} hint="카테고리별 보기" tone="rose" icon="arrow-down" onClick={() => onNavigate("transactions")} />
           <StatCard label="전월 대비" value={previousRecords.length ? `${netChange >= 0 ? "+" : "−"}${compactCurrency(Math.abs(netChange))}` : "—"} subtext={previousRecords.length ? `${netChange >= 0 ? "+" : "−"}${currency(Math.abs(netChange))}` : `${shortMonth(previousMonth)} 기록 없음`} hint={previousRecords.length ? `${monthText(previousMonth)} 순현금 ${currency(previousNet)}` : undefined} tone={previousRecords.length && netChange < 0 ? "rose" : "sky"} icon="wallet" />
-          <StatCard label="순자산 기록" value={compactCurrency(netAssets)} subtext={`${assets.length}개 자산 기록`} tone="violet" icon="pie-chart" onClick={() => onNavigate("assets")} />
+          <StatCard label="현재 예금·적금 잔액" value={compactCurrency(savingsBalance)} subtext={`종료 제외 · ${assets.length}개 계좌`} tone="violet" icon="pie-chart" onClick={() => onNavigate("assets")} />
         </>}
       </div>
 
@@ -1311,6 +1103,7 @@ function TransactionsPanel({
   const [query, setQuery] = useState("");
   const transactionKinds: EntryKind[] = ["expense", "salary", "side-income"];
   const transactionRecords = records.filter((record) => transactionKinds.includes(record.kind));
+  const sourceOptions = ["전체 출처", ...new Set(transactionRecords.map(record => record.source).filter((value): value is string => Boolean(value)))];
   const visible = transactionRecords.filter((record) => {
     if (range === "month" ? !record.date.startsWith(month) : !record.date.startsWith(year)) return false;
     if (kind !== "all" && record.kind !== kind) return false;
@@ -1336,7 +1129,7 @@ function TransactionsPanel({
               <button type="button" onClick={() => setRange("year")} aria-pressed={range === "year"} className={`min-h-11 rounded-xl px-3 py-2 text-xs font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 lg:min-h-0 ${range === "year" ? "bg-emerald-400/20 text-ink shadow-sm text-ink" : "text-faint hover:text-ink"}`}>연간</button>
             </div>
             <div className="flex flex-wrap gap-2">
-              {range === "month" ? <input aria-label="조회 월" type="month" value={month} onChange={(event) => setMonth(event.target.value)} className="h-11 rounded-xl border border-line bg-field px-3 text-xs text-body outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15 lg:h-9" /> : <select aria-label="조회 연도" value={year} onChange={(event) => setYear(event.target.value)} className="h-11 rounded-xl border border-line bg-field px-3 text-xs text-body outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15 lg:h-9"><option>{year}</option><option>{String(Number(year) - 1)}</option><option>{String(Number(year) + 1)}</option></select>}
+              {range === "month" ? <input aria-label="조회 월" type="month" value={month} onChange={(event) => { if (event.target.value) setMonth(event.target.value); }} className="h-11 rounded-xl border border-line bg-field px-3 text-xs text-body outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15 lg:h-9" /> : <select aria-label="조회 연도" value={year} onChange={(event) => setYear(event.target.value)} className="h-11 rounded-xl border border-line bg-field px-3 text-xs text-body outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15 lg:h-9"><option>{year}</option><option>{String(Number(year) - 1)}</option><option>{String(Number(year) + 1)}</option></select>}
               <button type="button" onClick={onOpenImport} className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-sky-400/20 px-3 text-xs font-medium text-sky-200 transition hover:bg-sky-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 lg:h-9"><Icon name="upload" size={14} /> 가져오기</button>
               <button type="button" onClick={() => onAdd("expense")} className="inline-flex h-11 items-center gap-1.5 rounded-xl bg-emerald-400 px-3 text-xs font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 lg:h-9"><Icon name="plus" size={14} /> 내역 추가</button>
             </div>
@@ -1373,6 +1166,7 @@ function AssetsPanel({
   const [institution, setInstitution] = useState("전체 기관");
   const [status, setStatus] = useState("전체 상태");
   const assets = records.filter((record) => record.kind === "savings" || record.kind === "stock-order");
+  const institutionOptions = ["전체 기관", ...new Set(assets.map(record => record.institution).filter((value): value is string => Boolean(value)))];
   // The tiles report the year's assets; only the list below narrows by status.
   const scoped = assets.filter((record) => {
     if (!isAssetInYear({ ...record, recurring: record.kind === "savings" }, year)) return false;
@@ -1384,8 +1178,8 @@ function AssetsPanel({
     status === "전체 상태"
       ? scoped
       : scoped.filter((record) => record.kind === "savings" && record.status === status);
-  const visibleTotals = totalByCurrency(scoped);
-  const savings = totalByCurrency(scoped.filter((record) => record.kind === "savings")).base;
+  const visibleTotals = totalByCurrency(scoped.filter(record => record.kind === "savings" && record.status !== "closed"));
+  const savings = totalByCurrency(scoped.filter((record) => record.kind === "savings" && record.status === "closed")).base;
   const stockTotals = totalByCurrency(scoped.filter((record) => record.kind === "stock-order"));
   const stocks = stockTotals.base;
   const foreignNote = (foreign: typeof visibleTotals.foreign) =>
@@ -1396,7 +1190,7 @@ function AssetsPanel({
 
   return (
     <div className="space-y-5">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3"><div className="rounded-3xl border border-sky-400/15 bg-sky-500/[0.05] p-4"><p className="text-xs text-sky-200/70">기록된 자산</p><p className="mt-2 text-xl font-semibold tabular-nums text-sky-100">{currency(visibleTotals.base)}</p>{totalNote && <p className="mt-1 text-[11px] text-sky-200/70">{totalNote}</p>}</div><div className="rounded-3xl border border-emerald-400/15 bg-emerald-500/[0.05] p-4"><p className="text-xs text-emerald-200/70">예금·적금</p><p className="mt-2 text-xl font-semibold tabular-nums text-emerald-100">{currency(savings)}</p></div><div className="rounded-3xl border border-violet-400/15 bg-violet-500/[0.05] p-4"><p className="text-xs text-violet-200/70">주식 주문 누적</p><p className="mt-2 text-xl font-semibold tabular-nums text-violet-100">{currency(stocks)}</p>{stockNote && <p className="mt-1 text-[11px] text-violet-200/70">{stockNote}</p>}</div></div>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3"><div className="rounded-3xl border border-sky-400/15 bg-sky-500/[0.05] p-4"><p className="text-xs text-sky-200/70">운영 계좌 잔액</p><p className="mt-2 text-xl font-semibold tabular-nums text-sky-100">{currency(visibleTotals.base)}</p>{totalNote && <p className="mt-1 text-[11px] text-sky-200/70">{totalNote}</p>}</div><div className="rounded-3xl border border-emerald-400/15 bg-emerald-500/[0.05] p-4"><p className="text-xs text-emerald-200/70">종료 계좌 기록</p><p className="mt-2 text-xl font-semibold tabular-nums text-emerald-100">{currency(savings)}</p></div><div className="rounded-3xl border border-violet-400/15 bg-violet-500/[0.05] p-4"><p className="text-xs text-violet-200/70">주식 주문 누적</p><p className="mt-2 text-xl font-semibold tabular-nums text-violet-100">{currency(stocks)}</p>{stockNote && <p className="mt-1 text-[11px] text-violet-200/70">{stockNote}</p>}</div></div>
       <section className="rounded-3xl border border-line bg-card">
         <div className="flex flex-col gap-4 border-b border-line p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-faint">Portfolio</p><h2 className="mt-1 text-lg font-semibold text-ink">자산 목록</h2></div><div className="flex flex-wrap gap-2"><select aria-label="자산 연도" value={year} onChange={(event) => setYear(event.target.value)} className="h-11 rounded-xl border border-line bg-field px-3 text-xs text-body outline-none focus:border-sky-400/60 focus:ring-2 focus:ring-sky-400/15 lg:h-9"><option>{year}</option><option>{String(Number(year) - 1)}</option><option>{String(Number(year) + 1)}</option></select><button type="button" onClick={() => onAdd("savings")} className="inline-flex h-11 items-center gap-1.5 rounded-xl bg-sky-400 px-3 text-xs font-semibold text-slate-950 transition hover:bg-sky-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 lg:h-9"><Icon name="plus" size={14} /> 자산 추가</button></div></div><div className="flex flex-wrap items-center gap-2"><SelectField compact="sm" id="asset-institution" label="기관" value={institution} onChange={setInstitution} options={institutionOptions} /><SelectField compact="sm" id="asset-status" label="상태" value={status === "전체 상태" ? "전체 상태" : assetStatusLabels[status as AssetStatus]} onChange={(value) => setStatus(value === "전체 상태" ? "전체 상태" : (Object.keys(assetStatusLabels) as AssetStatus[]).find((assetStatus) => assetStatusLabels[assetStatus] === value) || "전체 상태")} options={["전체 상태", ...Object.values(assetStatusLabels)]} /></div></div>
         <div className="divide-y divide-line">{visible.map((record) => <button type="button" key={record.id} onClick={() => onOpenDetail(record)} className="flex w-full items-center gap-3 px-4 py-4 text-left transition hover:bg-card-soft focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-sky-300 sm:px-5"><span className={`flex h-10 w-10 items-center justify-center rounded-3xl ${toneClasses(entryTones[record.kind], true)}`}><Icon name={entryIcons[record.kind]} size={17} /></span><span className="min-w-0 flex-1"><span className="block truncate text-sm font-medium text-body">{record.title}</span><span className="mt-1 block truncate text-xs text-faint">{record.institution || "기관 미입력"} · {record.account || record.ticker || entryLabels[record.kind]}</span></span><span className="hidden sm:block">{record.kind === "stock-order" ? record.side && <SideBadge side={record.side} /> : <StatusBadge status={record.status} />}</span><span className="text-right"><span className="block text-sm font-semibold tabular-nums text-ink">{currency(record.amount, record.currency)}</span><span className="mt-1 block text-[11px] text-faint">{record.maturityDate ? `만기 ${dateText(record.maturityDate)}` : dateText(record.date)}</span></span></button>)}{!visible.length && <div className="p-4 sm:p-5"><EmptyState icon="pie-chart" title="조건에 맞는 자산이 없습니다" description="자산 기록을 추가하거나 필터를 조정해보세요." action={<button type="button" onClick={() => onAdd("savings")} className="min-h-11 rounded-2xl bg-sky-400 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-sky-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200 lg:min-h-0">자산 추가</button>} /></div>}</div>
@@ -1421,7 +1215,7 @@ const taskCategory = (task: WorkItem): WorkCategory => task.category ?? DEFAULT_
 
 const taskToDraft = (task: WorkItem): TaskDraft => ({
   title: task.title,
-  category: taskCategory(task),
+  category: task.categoryId ?? taskCategory(task),
   dueDate: taskDueDate(task),
   amount: task.amount === undefined ? "" : String(task.amount),
   sentAt: task.sentAt ?? "",
@@ -1431,14 +1225,18 @@ const taskToDraft = (task: WorkItem): TaskDraft => ({
 
 function TaskEditModal({
   task,
+  categories,
   categoryOptions,
   saving,
+  error,
   onClose,
   onSave,
 }: {
   task: WorkItem | null;
+  categories: WorkCategoryRecord[];
   categoryOptions: string[];
   saving: boolean;
+  error: string;
   onClose: () => void;
   onSave: (draft: TaskDraft) => Promise<boolean>;
 }) {
@@ -1460,6 +1258,7 @@ function TaskEditModal({
   }, [taskId]);
 
   if (!task) return null;
+  const categoryName = categories.find(category => category.id === draft.category)?.name ?? draft.category;
   const update = <K extends keyof TaskDraft>(key: K, value: TaskDraft[K]) => {
     setDraft((previous) => ({ ...previous, [key]: value }));
     setValidationError("");
@@ -1476,7 +1275,7 @@ function TaskEditModal({
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-scrim p-0 backdrop-blur-sm sm:items-center sm:p-6">
       <div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="task-edit-title" className="flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:max-h-[90vh] sm:rounded-3xl">
         <div className="flex items-start justify-between border-b border-line px-5 py-5 sm:px-7"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-300/80">작업 상세</p><h2 id="task-edit-title" className="mt-1 text-xl font-semibold text-ink">작업 수정</h2><p className="mt-1 text-xs text-faint">마감일과 작업 상태를 수정합니다.</p></div><button type="button" onClick={onClose} aria-label="작업 수정 닫기" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl p-2 text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 lg:h-10 lg:w-10"><Icon name="close" size={20} /></button></div>
-        <form onSubmit={handleSubmit} className="overflow-y-auto px-5 py-5 sm:px-7 sm:py-6"><div className="grid gap-4 sm:grid-cols-2"><div className="sm:col-span-2"><FieldLabel htmlFor="edit-task-title" required>작업명</FieldLabel><input id="edit-task-title" required maxLength={300} value={draft.title} onChange={(event) => update("title", event.target.value)} className={fieldClass} aria-invalid={Boolean(validationError)} aria-describedby={validationError ? "task-validation-error" : undefined} /></div><div><FieldLabel htmlFor="edit-task-category">카테고리</FieldLabel><div className="relative"><select id="edit-task-category" value={draft.category} onChange={(event) => update("category", event.target.value)} className={selectClass}>{[...new Set([...categoryOptions, draft.category].filter(Boolean))].map((category) => <option key={category} value={category} className="bg-surface">{category}</option>)}</select><Icon name="chevron-down" size={15} className="pointer-events-none absolute right-3 top-[34px] text-faint" /></div></div><div><FieldLabel htmlFor="edit-task-date">마감일</FieldLabel><input id="edit-task-date" type="date" value={draft.dueDate} onChange={(event) => update("dueDate", event.target.value)} className={fieldClass} /></div><div><FieldLabel htmlFor="edit-task-amount">예상 금액</FieldLabel><input id="edit-task-amount" type="number" min="0" max="1000000000000" value={draft.amount} onChange={(event) => update("amount", event.target.value)} className={`${fieldClass} text-right tabular-nums`} placeholder="0" /></div><div><FieldLabel htmlFor="edit-task-sent">발송일</FieldLabel><input id="edit-task-sent" type="date" value={draft.sentAt} onChange={(event) => update("sentAt", event.target.value)} className={fieldClass} /></div><div><FieldLabel htmlFor="edit-task-status">상태</FieldLabel><div className="relative"><select id="edit-task-status" value={draft.status} onChange={(event) => update("status", event.target.value as WorkStatus)} className={selectClass}>{draft.status === "cancelled" && <option value="cancelled" disabled>취소</option>}{taskStatusOptions.map((status) => <option key={status} value={status} className="bg-surface">{taskStatusLabels[status]}</option>)}</select><Icon name="chevron-down" size={15} className="pointer-events-none absolute right-3 top-[34px] text-faint" /></div></div><div className="sm:col-span-2"><FieldLabel htmlFor="edit-task-note">메모</FieldLabel><textarea id="edit-task-note" rows={3} value={draft.note} onChange={(event) => update("note", event.target.value)} className={`${fieldClass} h-auto resize-none py-3`} placeholder="작업 메모" /></div></div>{validationError && <p id="task-validation-error" role="alert" className="mt-4 flex items-center gap-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-3 py-2.5 text-xs text-rose-200"><Icon name="info" size={15} />{validationError}</p>}<div className="mt-6 flex flex-col-reverse gap-2 border-t border-line pt-5 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} className="h-11 rounded-2xl px-5 text-sm text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">취소</button><button type="submit" disabled={saving} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 hover:bg-sky-300 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200">{saving && <Icon name="refresh" size={16} className="animate-spin" />}변경 저장</button></div></form>
+        <form onSubmit={handleSubmit} className="overflow-y-auto px-5 py-5 sm:px-7 sm:py-6"><fieldset disabled={saving} className="min-w-0"><div className="grid gap-4 sm:grid-cols-2"><div className="sm:col-span-2"><FieldLabel htmlFor="edit-task-title" required>작업명</FieldLabel><input id="edit-task-title" required maxLength={300} value={draft.title} onChange={(event) => update("title", event.target.value)} className={fieldClass} aria-invalid={Boolean(validationError)} aria-describedby={validationError ? "task-validation-error" : undefined} /></div><div><FieldLabel htmlFor="edit-task-category">카테고리</FieldLabel><div className="relative"><select id="edit-task-category" value={categoryName} onChange={(event) => update("category", categories.find(category => category.name === event.target.value)?.id ?? event.target.value)} className={selectClass}>{[...new Set([...categoryOptions, categoryName].filter(Boolean))].map((category) => <option key={category} value={category} className="bg-surface">{category}</option>)}</select><Icon name="chevron-down" size={15} className="pointer-events-none absolute right-3 top-[34px] text-faint" /></div></div><div><FieldLabel htmlFor="edit-task-date">마감일</FieldLabel><input id="edit-task-date" type="date" value={draft.dueDate} onChange={(event) => update("dueDate", event.target.value)} className={fieldClass} /></div><div><FieldLabel htmlFor="edit-task-amount">예상 금액</FieldLabel><input id="edit-task-amount" type="number" min="0" max="1000000000000" value={draft.amount} onChange={(event) => update("amount", event.target.value)} className={`${fieldClass} text-right tabular-nums`} placeholder="0" /></div><div><FieldLabel htmlFor="edit-task-sent">발송일</FieldLabel><input id="edit-task-sent" type="date" value={draft.sentAt} onChange={(event) => update("sentAt", event.target.value)} className={fieldClass} /></div><div><FieldLabel htmlFor="edit-task-status">상태</FieldLabel><div className="relative"><select id="edit-task-status" value={draft.status} onChange={(event) => update("status", event.target.value as WorkStatus)} className={selectClass}>{draft.status === "cancelled" && <option value="cancelled" disabled>취소</option>}{taskStatusOptions.map((status) => <option key={status} value={status} className="bg-surface">{taskStatusLabels[status]}</option>)}</select><Icon name="chevron-down" size={15} className="pointer-events-none absolute right-3 top-[34px] text-faint" /></div></div><div className="sm:col-span-2"><FieldLabel htmlFor="edit-task-note">메모</FieldLabel><textarea id="edit-task-note" rows={3} value={draft.note} onChange={(event) => update("note", event.target.value)} className={`${fieldClass} h-auto resize-none py-3`} placeholder="작업 메모" /></div></div>{validationError && <p id="task-validation-error" role="alert" className="mt-4 flex items-center gap-2 rounded-2xl border border-rose-400/20 bg-rose-500/10 px-3 py-2.5 text-xs text-rose-200"><Icon name="info" size={15} />{validationError}</p>}<FormError message={error} /><div className="mt-6 flex flex-col-reverse gap-2 border-t border-line pt-5 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} className="h-11 rounded-2xl px-5 text-sm text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300">취소</button><button type="submit" disabled={saving} className="inline-flex h-11 items-center justify-center gap-2 rounded-2xl bg-sky-400 px-6 text-sm font-semibold text-slate-950 hover:bg-sky-300 disabled:opacity-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200">{saving && <Icon name="refresh" size={16} className="animate-spin" />}변경 저장</button></div></fieldset></form>
       </div>
     </div>
   );
@@ -1505,16 +1304,17 @@ function TaskDetailModal({
   return <div className="fixed inset-0 z-40 flex items-end justify-center bg-scrim p-0 backdrop-blur-sm sm:items-center sm:p-6"><div ref={dialogRef} role="dialog" aria-modal="true" aria-labelledby="task-detail-title" className="w-full max-w-lg overflow-hidden rounded-t-3xl border border-line-strong bg-surface shadow-2xl shadow-black/50 sm:rounded-3xl"><div className="flex items-start justify-between border-b border-line px-5 py-5 sm:px-7"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-sky-300/80">작업 상세</p><h2 id="task-detail-title" className="mt-2 text-xl font-semibold text-ink">{task.title}</h2><div className="mt-2"><StatusBadge status={taskStatus(task)} /></div></div><button type="button" onClick={onClose} aria-label="작업 상세 닫기" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl p-2 text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 lg:h-10 lg:w-10"><Icon name="close" size={20} /></button></div><div className="px-5 py-5 sm:px-7"><dl className="divide-y divide-line rounded-3xl border border-line bg-card-soft px-4">{details.map(([label, value]) => <div key={label} className="flex items-center justify-between gap-4 py-3 text-sm"><dt className="text-faint">{label}</dt><dd className="text-right text-body">{value}</dd></div>)}</dl>{(task.memo || task.description) && <p className="mt-4 rounded-3xl bg-card px-4 py-3 text-sm leading-6 text-muted">{task.memo || task.description}</p>}<div className="mt-5 flex gap-2"><button type="button" onClick={() => onDelete(task)} className="inline-flex h-11 items-center gap-2 rounded-2xl border border-rose-400/20 px-4 text-sm font-medium text-rose-200 hover:bg-rose-500/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300"><Icon name="trash" size={16} /> 삭제</button><button type="button" onClick={() => onEdit(task)} className="inline-flex h-11 flex-1 items-center justify-center gap-2 rounded-2xl bg-card-strong px-4 text-sm font-medium text-ink hover:bg-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="edit" size={16} /> 수정</button></div></div></div></div>;
 }
 
-function TaskDeleteDialog({ task, onClose, onConfirm }: { task: WorkItem | null; onClose: () => void; onConfirm: () => void }) {
+function TaskDeleteDialog({ task, onClose, onConfirm, saving, error }: { task: WorkItem | null; saving: boolean; error: string; onClose: () => void; onConfirm: () => void }) {
   const dialogRef = useDialogFocus(Boolean(task), onClose);
   if (!task) return null;
-  return <div className="fixed inset-0 z-[60] flex items-center justify-center bg-scrim p-5 backdrop-blur-sm"><div ref={dialogRef} role="alertdialog" aria-modal="true" aria-labelledby="task-delete-title" aria-describedby="task-delete-copy" className="w-full max-w-sm rounded-3xl border border-line-strong bg-surface p-6 shadow-2xl shadow-black/60"><span className="flex h-11 w-11 items-center justify-center rounded-3xl bg-rose-500/10 text-rose-200"><Icon name="trash" size={20} /></span><h2 id="task-delete-title" className="mt-5 text-lg font-semibold text-ink">작업을 삭제할까요?</h2><p id="task-delete-copy" className="mt-2 text-sm leading-6 text-muted"><span className="font-medium text-body">{task.title}</span> 작업이 삭제됩니다.</p><div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} className="h-11 rounded-2xl px-4 text-sm text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">취소</button><button type="button" onClick={onConfirm} className="h-11 rounded-2xl bg-rose-500 px-5 text-sm font-semibold text-ink hover:bg-rose-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300">삭제하기</button></div></div></div>;
+  return <div className="fixed inset-0 z-[60] flex items-center justify-center bg-scrim p-5 backdrop-blur-sm"><div ref={dialogRef} role="alertdialog" aria-modal="true" aria-labelledby="task-delete-title" aria-describedby="task-delete-copy" className="w-full max-w-sm rounded-3xl border border-line-strong bg-surface p-6 shadow-2xl shadow-black/60"><span className="flex h-11 w-11 items-center justify-center rounded-3xl bg-rose-500/10 text-rose-200"><Icon name="trash" size={20} /></span><h2 id="task-delete-title" className="mt-5 text-lg font-semibold text-ink">작업을 삭제할까요?</h2><p id="task-delete-copy" className="mt-2 text-sm leading-6 text-muted"><span className="font-medium text-body">{task.title}</span> 작업이 삭제됩니다.</p><FormError message={error} /><div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end"><button type="button" onClick={onClose} disabled={saving} className="h-11 rounded-2xl px-4 text-sm text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300">취소</button><button type="button" onClick={onConfirm} disabled={saving} className="h-11 rounded-2xl bg-rose-500 px-5 text-sm font-semibold text-ink hover:bg-rose-400 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300">삭제하기</button></div></div></div>;
 }
 
 function CategoryManagerModal({
   categories,
   usageCounts,
   saving,
+  error,
   onClose,
   onCreate,
   onRename,
@@ -1523,8 +1323,9 @@ function CategoryManagerModal({
   categories: WorkCategoryRecord[];
   usageCounts: Record<string, number>;
   saving: boolean;
+  error: string;
   onClose: () => void;
-  onCreate: (name: string) => void;
+  onCreate: (name: string) => Promise<boolean>;
   onRename: (category: WorkCategoryRecord, name: string) => void;
   onDelete: (category: WorkCategoryRecord) => void;
 }) {
@@ -1550,7 +1351,8 @@ function CategoryManagerModal({
           <p className="mt-1.5 px-1 text-[11px] text-faint">작업 {used}건{used ? " · 삭제하려면 작업의 카테고리를 먼저 옮겨주세요." : categories.length <= 1 ? " · 카테고리는 최소 한 개가 필요합니다." : ""}</p>
         </li>;
       })}</ul>
-      <form onSubmit={(event) => { event.preventDefault(); if (!newName.trim()) return; onCreate(newName.trim()); setNewName(""); }} className="mt-4 flex items-center gap-2 border-t border-line pt-4">
+      <FormError message={error} />
+      <form onSubmit={async (event) => { event.preventDefault(); if (!newName.trim() || saving) return; if (await onCreate(newName.trim())) setNewName(""); }} className="mt-4 flex items-center gap-2 border-t border-line pt-4">
         <label className="sr-only" htmlFor="category-new-name">새 카테고리 이름</label>
         <input id="category-new-name" maxLength={60} value={newName} onChange={(event) => setNewName(event.target.value)} className={`${fieldClass} h-11 lg:h-10`} placeholder="예: 온라인 강의" />
         <button type="submit" disabled={saving || !newName.trim()} className="inline-flex h-11 shrink-0 lg:h-10 items-center gap-1 rounded-xl bg-sky-400 px-3.5 text-xs font-semibold text-slate-950 transition hover:bg-sky-300 disabled:opacity-40 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-200"><Icon name="plus" size={14} /> 추가</button>
@@ -1563,6 +1365,7 @@ function TasksPanel({
   tasks,
   categories,
   saving,
+  error,
   onStatusChange,
   onCreateTask,
   onUpdateTask,
@@ -1574,19 +1377,22 @@ function TasksPanel({
   tasks: WorkItem[];
   categories: WorkCategoryRecord[];
   saving: boolean;
+  error: string;
   onStatusChange: (id: string, status: WorkStatus) => void;
-  onCreateTask: (task: Omit<WorkItem, "id">) => Promise<boolean>;
+  onCreateTask: (task: WorkItem) => Promise<boolean>;
   onUpdateTask: (task: WorkItem) => Promise<boolean>;
-  onDeleteTask: (task: WorkItem) => void;
-  onCreateCategory: (name: string) => void;
+  onDeleteTask: (task: WorkItem) => Promise<boolean>;
+  onCreateCategory: (name: string) => Promise<boolean>;
   onRenameCategory: (category: WorkCategoryRecord, name: string) => void;
   onDeleteCategory: (category: WorkCategoryRecord) => void;
 }) {
   const [statusFilter, setStatusFilter] = useState("전체 상태");
+  const [query, setQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("전체 카테고리");
   const [year, setYear] = useState(currentYear());
   const [month, setMonth] = useState("");
   const [validationError, setValidationError] = useState("");
+  const newTaskId = useRef(createEntityId("work"));
   const [showForm, setShowForm] = useState(false);
   // Dialogs keep an id, not a row: a category rename (or any other write)
   // reaching the store while one is open has to be what the dialog saves.
@@ -1599,7 +1405,8 @@ function TasksPanel({
   const categoryOptions = categoryNames.length ? categoryNames : [DEFAULT_WORK_CATEGORY];
   // A deleted or renamed category must not leave the form pointing at a name
   // the picker no longer offers.
-  const draftCategory = categoryOptions.includes(draft.category) ? draft.category : categoryOptions[0];
+  const draftCategoryName = categories.find(category => category.id === draft.category)?.name ?? draft.category;
+  const draftCategory = categoryOptions.includes(draftCategoryName) ? draftCategoryName : categoryOptions[0];
   const taskById = (id: string | null) => (id ? tasks.find((task) => task.id === id) ?? null : null);
   const detailTask = taskById(detailTaskId);
   const editingTask = taskById(editingTaskId);
@@ -1609,12 +1416,14 @@ function TasksPanel({
     result[name] = (result[name] || 0) + 1;
     return result;
   }, {});
-  const activeCategoryFilter = categoryOptions.includes(categoryFilter) ? categoryFilter : "전체 카테고리";
+  const filterCategoryName = categories.find(category => category.id === categoryFilter)?.name ?? categoryFilter;
+  const activeCategoryFilter = categoryOptions.includes(filterCategoryName) ? filterCategoryName : "전체 카테고리";
   const scoped = tasks.filter((task) => isTaskInPeriod(task, year, month));
-  const visible = scoped.filter((task) => {
+  const visible = sortTasksByDeadline(scoped.filter((task) => {
+    if (query.trim() && !task.title.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase())) return false;
     if (statusFilter !== "전체 상태" && taskStatusLabels[taskStatus(task)] !== statusFilter) return false;
     return activeCategoryFilter === "전체 카테고리" || taskCategory(task) === activeCategoryFilter;
-  });
+  }));
   const counts = taskStatusOptions.reduce<Record<string, number>>((result, status) => {
     result[status] = scoped.filter((task) => taskStatus(task) === status).length;
     return result;
@@ -1627,8 +1436,9 @@ function TasksPanel({
       return;
     }
     setValidationError("");
-    if (!await onCreateTask({ title: draft.title.trim(), category: draftCategory, dueDate: draft.dueDate || undefined, amount: draft.amount === "" ? undefined : Number(draft.amount), status: draft.status })) return;
+    if (!await onCreateTask({ id: newTaskId.current, title: draft.title.trim(), category: draftCategory, dueDate: draft.dueDate || undefined, amount: draft.amount === "" ? undefined : Number(draft.amount), status: draft.status })) return;
     setDraft({ title: "", category: "", dueDate: currentDate(), amount: "", status: "planned" });
+    newTaskId.current = createEntityId("work");
     setShowForm(false);
   };
 
@@ -1637,23 +1447,32 @@ function TasksPanel({
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{taskStatusOptions.map((status) => <div key={status} className="rounded-3xl border border-line bg-card p-4"><StatusBadge status={status} /><p className="mt-3 text-xl font-semibold tabular-nums text-ink">{counts[status]}건</p></div>)}</div>
       <div className="flex items-center justify-between gap-3 rounded-3xl border border-line bg-card px-5 py-4"><span className="text-xs text-faint">작업 보수 합계</span><span className="text-xl font-semibold tabular-nums text-ink">{currency(scoped.reduce((sum, task) => sum + (task.amount || 0), 0))}</span></div>
       <section className="rounded-3xl border border-line bg-card">
-        <div className="flex flex-col gap-4 border-b border-line p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-faint">Work board</p><h2 className="mt-1 text-lg font-semibold text-ink">작업 관리</h2><p className="mt-1 text-xs text-faint">마감일과 상태별로 작업을 관리하세요.</p></div><button type="button" onClick={() => setShowForm((value) => !value)} className="inline-flex h-11 items-center gap-1.5 rounded-xl bg-emerald-400 px-3 text-xs font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 lg:h-9"><Icon name="plus" size={14} /> 작업 추가</button></div><div className="flex flex-wrap items-center gap-2"><select aria-label="작업 연도" value={year} onChange={(event) => setYear(event.target.value)} className="h-11 rounded-xl border border-line bg-field px-3 text-xs text-body outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15 lg:h-9"><option>{year}</option><option>{String(Number(year) - 1)}</option><option>{String(Number(year) + 1)}</option></select><select aria-label="작업 월" value={month} onChange={(event) => setMonth(event.target.value)} className="h-11 rounded-xl border border-line bg-field px-3 text-xs text-body outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15 lg:h-9"><option value="">전체 월</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={String(index + 1).padStart(2, "0")}>{index + 1}월</option>)}</select><SelectField compact="sm" id="work-status" label="작업 상태" value={statusFilter} onChange={setStatusFilter} options={["전체 상태", ...taskStatusOptions.map((status) => taskStatusLabels[status])]} /><SelectField compact="sm" id="work-category" label="카테고리" value={activeCategoryFilter} onChange={setCategoryFilter} options={["전체 카테고리", ...categoryOptions]} /><button type="button" onClick={() => setManagingCategories(true)} className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-line px-3 text-xs text-body transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 lg:h-9"><Icon name="settings" size={14} /> 카테고리 관리</button></div></div>
-        {showForm && <form onSubmit={createTask} className="grid gap-3 border-b border-line bg-emerald-500/[0.025] p-4 sm:grid-cols-2 sm:p-5"><div className="sm:col-span-2"><FieldLabel htmlFor="task-title" required>작업명</FieldLabel><input id="task-title" required maxLength={300} value={draft.title} onChange={(event) => setDraft((value) => ({ ...value, title: event.target.value }))} className={fieldClass} placeholder="예: 강의 자료 정리" /></div><div><SelectField id="task-category" label="카테고리" value={draftCategory} onChange={(value) => setDraft((previous) => ({ ...previous, category: value }))} options={categoryOptions} /></div><div><FieldLabel htmlFor="task-due-date">마감일</FieldLabel><input id="task-due-date" type="date" value={draft.dueDate} onChange={(event) => setDraft((value) => ({ ...value, dueDate: event.target.value }))} className={fieldClass} /></div><div><FieldLabel htmlFor="task-amount">예상 금액</FieldLabel><input id="task-amount" type="number" min="0" max="1000000000000" value={draft.amount} onChange={(event) => setDraft((value) => ({ ...value, amount: event.target.value }))} className={`${fieldClass} text-right tabular-nums`} placeholder="0" /></div><div><SelectField id="task-new-status" label="상태" value={taskStatusLabels[draft.status]} onChange={(value) => setDraft((previous) => ({ ...previous, status: taskStatusOptions.find((status) => taskStatusLabels[status] === value) || "planned" }))} options={taskStatusOptions.map((status) => taskStatusLabels[status])} /></div>{validationError && <p role="alert" className="text-xs text-rose-300 sm:col-span-2">{validationError}</p>}<div className="flex items-end justify-end gap-2 sm:col-span-2"><button type="button" onClick={() => setShowForm(false)} className="h-11 rounded-2xl px-4 text-xs text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 lg:h-10">취소</button><button type="submit" disabled={saving} className="disabled:opacity-50 h-11 rounded-2xl bg-emerald-400 px-5 text-xs font-semibold text-slate-950 hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 lg:h-10">작업 저장</button></div></form>}
-        <div className="divide-y divide-line">{visible.map((task) => <div key={task.id} className="flex flex-col gap-3 px-4 py-4 transition hover:bg-card-soft sm:flex-row sm:items-center sm:px-5"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-3xl bg-sky-500/10 text-sky-200"><Icon name="briefcase" size={17} /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-sm font-medium text-body">{task.title}</h3><StatusBadge status={taskStatus(task)} /></div><p className="mt-1 truncate text-xs text-faint">{taskCategory(task)}</p><div className="mt-2 flex flex-wrap gap-3 text-[11px] text-faint"><span>{taskDueDate(task) ? `마감 ${dateText(taskDueDate(task))}` : "마감일 미정"}</span>{task.amount !== undefined ? <span className="tabular-nums text-body">{currency(task.amount)}</span> : null}{task.sentAt ? <span>발송 {dateText(task.sentAt)}</span> : null}</div></div><div className="flex items-center gap-2 self-end sm:self-center"><label className="sr-only" htmlFor={`status-${task.id}`}>상태 변경</label><select id={`status-${task.id}`} value={taskStatus(task)} disabled={saving} onChange={(event) => onStatusChange(task.id, event.target.value as WorkStatus)} className="h-11 rounded-xl border border-line bg-field px-2.5 text-xs text-body outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15 lg:h-9">{taskStatus(task) === "cancelled" && <option value="cancelled" disabled>취소</option>}{taskStatusOptions.map((status) => <option key={status} value={status}>{taskStatusLabels[status]}</option>)}</select><button type="button" disabled={saving || taskStatus(task) === "paid"} onClick={() => onStatusChange(task.id, taskNextStatus[taskStatus(task)])} className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-line px-2.5 text-xs text-body transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 lg:h-9"><Icon name="check" size={14} /> {taskStatusLabels[taskNextStatus[taskStatus(task)]]}</button><button type="button" onClick={() => setDetailTaskId(task.id)} className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-line px-2.5 text-xs text-body transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 lg:h-9"><Icon name="more" size={15} /> 상세</button></div></div>)}{!visible.length && <div className="p-4 sm:p-5"><EmptyState icon="briefcase" title="조건에 맞는 작업이 없습니다" description="작업을 추가하거나 조회 조건을 바꿔보세요." action={<button type="button" onClick={() => setShowForm(true)} className="min-h-11 rounded-2xl bg-emerald-400 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 lg:min-h-0">작업 추가</button>} /></div>}</div>
+        <div className="flex flex-col gap-4 border-b border-line p-4 sm:p-5"><div className="flex flex-wrap items-center justify-between gap-3"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-faint">Work board</p><h2 className="mt-1 text-lg font-semibold text-ink">작업 관리</h2><p className="mt-1 text-xs text-faint">마감일과 상태별로 작업을 관리하세요.</p></div><button type="button" onClick={() => setShowForm((value) => !value)} className="inline-flex h-11 items-center gap-1.5 rounded-xl bg-emerald-400 px-3 text-xs font-semibold text-slate-950 transition hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 lg:h-9"><Icon name="plus" size={14} /> 작업 추가</button></div><div className="grid grid-cols-2 gap-2 md:flex md:flex-wrap md:items-center [&>*]:min-w-0 max-[379px]:[&>div]:col-span-2"><select aria-label="작업 연도" value={year} onChange={(event) => setYear(event.target.value)} className="h-11 rounded-xl border border-line bg-field px-3 text-xs text-body outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15 lg:h-9"><option>{year}</option><option>{String(Number(year) - 1)}</option><option>{String(Number(year) + 1)}</option></select><select aria-label="작업 월" value={month} onChange={(event) => setMonth(event.target.value)} className="h-11 rounded-xl border border-line bg-field px-3 text-xs text-body outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15 lg:h-9"><option value="">전체 월</option>{Array.from({ length: 12 }, (_, index) => <option key={index + 1} value={String(index + 1).padStart(2, "0")}>{index + 1}월</option>)}</select><SelectField compact="sm" id="work-status" label="작업 상태" value={statusFilter} onChange={setStatusFilter} options={["전체 상태", ...taskStatusOptions.map((status) => taskStatusLabels[status])]} /><SelectField compact="sm" id="work-category" label="카테고리" value={activeCategoryFilter} onChange={value => setCategoryFilter(categories.find(category => category.name === value)?.id ?? value)} options={["전체 카테고리", ...categoryOptions]} /><button type="button" onClick={() => setManagingCategories(true)} className="col-span-2 whitespace-nowrap justify-center inline-flex h-11 items-center gap-1.5 rounded-xl border border-line px-3 text-xs text-body transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 lg:h-9"><Icon name="settings" size={14} /> 카테고리 관리</button></div><label className="block"><span className="sr-only">작업명 검색</span><input value={query} onChange={event => setQuery(event.target.value)} placeholder="작업명 검색 · 마감 빠른 순" className="h-11 w-full rounded-xl border border-line bg-field px-3 text-sm text-body outline-none focus:ring-2 focus:ring-emerald-300 lg:h-9" /></label></div>
+        {showForm && <form onSubmit={createTask} className="grid gap-3 border-b border-line bg-emerald-500/[0.025] p-4 sm:grid-cols-2 sm:p-5"><div className="sm:col-span-2"><FieldLabel htmlFor="task-title" required>작업명</FieldLabel><input id="task-title" required maxLength={300} value={draft.title} onChange={(event) => setDraft((value) => ({ ...value, title: event.target.value }))} className={fieldClass} placeholder="예: 강의 자료 정리" /></div><div><SelectField id="task-category" label="카테고리" value={draftCategory} onChange={(value) => setDraft((previous) => ({ ...previous, category: categories.find(category => category.name === value)?.id ?? value }))} options={categoryOptions} /></div><div><FieldLabel htmlFor="task-due-date">마감일</FieldLabel><input id="task-due-date" type="date" value={draft.dueDate} onChange={(event) => setDraft((value) => ({ ...value, dueDate: event.target.value }))} className={fieldClass} /></div><div><FieldLabel htmlFor="task-amount">예상 금액</FieldLabel><input id="task-amount" type="number" min="0" max="1000000000000" value={draft.amount} onChange={(event) => setDraft((value) => ({ ...value, amount: event.target.value }))} className={`${fieldClass} text-right tabular-nums`} placeholder="0" /></div><div><SelectField id="task-new-status" label="상태" value={taskStatusLabels[draft.status]} onChange={(value) => setDraft((previous) => ({ ...previous, status: taskStatusOptions.find((status) => taskStatusLabels[status] === value) || "planned" }))} options={taskStatusOptions.map((status) => taskStatusLabels[status])} /></div><div className="sm:col-span-2"><FormError message={error} /></div>{validationError && <p role="alert" className="text-xs text-rose-300 sm:col-span-2">{validationError}</p>}<div className="flex items-end justify-end gap-2 sm:col-span-2"><button type="button" onClick={() => setShowForm(false)} className="h-11 rounded-2xl px-4 text-xs text-muted hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 lg:h-10">취소</button><button type="submit" disabled={saving} className="disabled:opacity-50 h-11 rounded-2xl bg-emerald-400 px-5 text-xs font-semibold text-slate-950 hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 lg:h-10">작업 저장</button></div></form>}
+        <div className="divide-y divide-line">{visible.map((task) => <div key={task.id} className="flex flex-col gap-3 px-4 py-4 transition hover:bg-card-soft sm:flex-row sm:items-center sm:px-5"><span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-3xl bg-sky-500/10 text-sky-200"><Icon name="briefcase" size={17} /></span><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-sm font-medium text-body">{task.title}</h3><StatusBadge status={taskStatus(task)} /></div><p className="mt-1 truncate text-xs text-faint">{taskCategory(task)}</p><div className="mt-2 flex flex-wrap gap-3 text-[11px] text-faint"><span>{taskDueDate(task) ? `마감 ${dateText(taskDueDate(task))}` : "마감일 미정"}</span>{task.amount !== undefined ? <span className="tabular-nums text-body">{currency(task.amount)}</span> : null}{task.sentAt ? <span>발송 {dateText(task.sentAt)}</span> : null}</div></div><div className="flex w-full flex-wrap items-center justify-end gap-2 self-end sm:w-auto sm:self-center [&>*]:shrink-0 [&>*]:whitespace-nowrap"><label className="sr-only" htmlFor={`status-${task.id}`}>상태 변경</label><select id={`status-${task.id}`} value={taskStatus(task)} disabled={saving} onChange={(event) => onStatusChange(task.id, event.target.value as WorkStatus)} className="h-11 rounded-xl border border-line bg-field px-2.5 text-xs text-body outline-none focus:border-emerald-400/60 focus:ring-2 focus:ring-emerald-400/15 lg:h-9">{taskStatus(task) === "cancelled" && <option value="cancelled" disabled>취소</option>}{taskStatusOptions.map((status) => <option key={status} value={status}>{taskStatusLabels[status]}</option>)}</select><button type="button" disabled={saving || taskStatus(task) === "paid"} onClick={() => onStatusChange(task.id, taskNextStatus[taskStatus(task)])} className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-line px-2.5 text-xs text-body transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300 lg:h-9"><Icon name="check" size={14} /> {taskStatusLabels[taskNextStatus[taskStatus(task)]]}</button><button type="button" onClick={() => setDetailTaskId(task.id)} className="inline-flex h-11 items-center gap-1.5 rounded-xl border border-line px-2.5 text-xs text-body transition hover:bg-card-strong hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300 lg:h-9"><Icon name="more" size={15} /> 상세</button></div></div>)}{!visible.length && <div className="p-4 sm:p-5"><EmptyState icon="briefcase" title="조건에 맞는 작업이 없습니다" description="작업을 추가하거나 조회 조건을 바꿔보세요." action={<button type="button" onClick={() => setShowForm(true)} className="min-h-11 rounded-2xl bg-emerald-400 px-3.5 py-2 text-xs font-semibold text-slate-950 hover:bg-emerald-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-200 lg:min-h-0">작업 추가</button>} /></div>}</div>
         <div className="border-t border-line px-4 py-3 text-[11px] text-faint sm:px-5">총 {visible.length}건 · 상태 변경은 바로 저장됩니다. 마감일 미정 작업은 전체 월에서 조회하세요.</div>
       </section>
       <TaskDetailModal task={detailTask} onClose={() => setDetailTaskId(null)} onEdit={(task) => { setDetailTaskId(null); setEditingTaskId(task.id); }} onDelete={(task) => { setDetailTaskId(null); setDeletingTaskId(task.id); }} />
-      {managingCategories && <CategoryManagerModal categories={categories} usageCounts={categoryUsage} saving={saving} onClose={() => setManagingCategories(false)} onCreate={onCreateCategory} onRename={onRenameCategory} onDelete={onDeleteCategory} />}
-      <TaskEditModal task={editingTask} categoryOptions={categoryOptions} saving={saving} onClose={() => setEditingTaskId(null)} onSave={(nextDraft) => {
+      {managingCategories && <CategoryManagerModal categories={categories} usageCounts={categoryUsage} saving={saving} error={error} onClose={() => { if (!saving) setManagingCategories(false); }} onCreate={onCreateCategory} onRename={onRenameCategory} onDelete={onDeleteCategory} />}
+      <TaskEditModal task={editingTask} categories={categories} categoryOptions={categoryOptions} saving={saving} error={error} onClose={() => { if (!saving) setEditingTaskId(null); }} onSave={(nextDraft) => {
         if (!editingTask) return Promise.resolve(false);
-        return onUpdateTask({ ...editingTask, title: nextDraft.title.trim(), category: categoryNames.includes(nextDraft.category) ? nextDraft.category : taskCategory(editingTask), dueDate: nextDraft.dueDate || undefined, workDate: nextDraft.dueDate ? editingTask.workDate : undefined, amount: nextDraft.amount === "" ? undefined : Number(nextDraft.amount), sentAt: nextDraft.sentAt || undefined, memo: nextDraft.note.trim() || undefined, description: nextDraft.note.trim() || undefined, status: nextDraft.status });
+        const selectedCategory = categories.find(category => category.id === nextDraft.category)?.name ?? nextDraft.category;
+        return onUpdateTask({ ...editingTask, title: nextDraft.title.trim(), category: categoryNames.includes(selectedCategory) ? selectedCategory : taskCategory(editingTask), dueDate: nextDraft.dueDate || undefined, workDate: nextDraft.dueDate ? editingTask.workDate : undefined, amount: nextDraft.amount === "" ? undefined : Number(nextDraft.amount), sentAt: nextDraft.sentAt || undefined, memo: nextDraft.note.trim() || undefined, description: nextDraft.note.trim() || undefined, status: nextDraft.status === taskStatus(editingTask) ? editingTask.status : nextDraft.status });
       }} />
-      <TaskDeleteDialog task={deletingTask} onClose={() => setDeletingTaskId(null)} onConfirm={() => { if (deletingTask) onDeleteTask(deletingTask); setDeletingTaskId(null); setDetailTaskId(null); }} />
+      <TaskDeleteDialog task={deletingTask} saving={saving} error={error} onClose={() => { if (!saving) setDeletingTaskId(null); }} onConfirm={async () => { if (deletingTask && await onDeleteTask(deletingTask)) { setDeletingTaskId(null); setDetailTaskId(null); } }} />
     </div>
   );
 }
 
-export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
+const subscribeToClient = () => () => {};
+
+export default function GagebuDashboard(props: { demo?: boolean }) {
+  // Local dates and browser storage must be read after hydration, not at build time.
+  const client = useSyncExternalStore(subscribeToClient, () => true, () => false);
+  return client ? <Dashboard {...props} /> : <div role="status" className="min-h-screen bg-app p-8 text-muted">가계부를 불러오는 중…</div>;
+}
+
+function Dashboard({ demo = false }: { demo?: boolean }) {
   const [repositories] = useState(() => (demo ? createDemoRepositories() : createDataRepositories()));
 
   const [activeView, setActiveView] = useState<ViewKey>("overview");
@@ -1666,6 +1485,16 @@ export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
   const [workCategories, setWorkCategories] = useState<WorkCategoryRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const entryIdRef = useRef<string | null>(null);
+  const beginSave = () => {
+    if (savingRef.current) return false;
+    savingRef.current = true;
+    setSaving(true);
+    setError("");
+    return true;
+  };
+  const endSave = () => { savingRef.current = false; setSaving(false); };
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [entryOpen, setEntryOpen] = useState(false);
@@ -1675,7 +1504,7 @@ export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
   const [detailRecord, setDetailRecord] = useState<FinanceRecord | null>(null);
   const [deleteRecord, setDeleteRecord] = useState<FinanceRecord | null>(null);
   const [importOpen, setImportOpen] = useState(false);
-  const seededCategories = useRef(false);
+  const [backupOpen, setBackupOpen] = useState(false);
 
   useEffect(() => {
     // The audit script has no way to tell which backend is live; seeding the
@@ -1688,40 +1517,29 @@ export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
   useEffect(() => {
     let active = true;
     const unsubscribers: (() => void)[] = [];
-    void Promise.all([
-      repositories.transactions.subscribe(setTransactions, (repositoryError) => {
-        if (active) setError(repositoryError.message);
-      }),
-      repositories.savingsAccounts.subscribe(setSavingsAccounts, (repositoryError) => {
-        if (active) setError(repositoryError.message);
-      }),
-      repositories.stockOrders.subscribe(setStockOrders, (repositoryError) => {
-        if (active) setError(repositoryError.message);
-      }),
-      repositories.workItems.subscribe(setWorkItems, (repositoryError) => {
-        if (active) setError(repositoryError.message);
-      }),
-      repositories.workCategories.subscribe(setWorkCategories, (repositoryError) => {
-        if (active) setError(repositoryError.message);
-      }),
-    ])
-      .then((stops) => {
-        if (!active) {
-          stops.forEach((stop) => stop());
-          return;
-        }
-        unsubscribers.push(...stops);
-        setLoading(false);
-      })
-      .catch((reason: unknown) => {
-        if (!active) return;
-        setError(reason instanceof Error ? reason.message : "저장된 기록을 불러오지 못했습니다.");
-        setLoading(false);
-      });
-    return () => {
-      active = false;
-      unsubscribers.forEach((stop) => stop());
+    const ready = new Set<string>();
+    const onError = (reason: unknown) => {
+      if (!active) return;
+      setError(reason instanceof Error ? reason.message : "저장된 기록을 불러오지 못했습니다.");
+      setLoading(false);
     };
+    const onReady = (key: string) => () => {
+      ready.add(key);
+      if (active && ready.size === 5) setLoading(false);
+    };
+    void repositories.initializeWorkCategories().then(async () => {
+      if (!active) return;
+      const stops = await Promise.all([
+        repositories.transactions.subscribe(items => active && setTransactions(items), onError, onReady("transactions")),
+        repositories.savingsAccounts.subscribe(items => active && setSavingsAccounts(items), onError, onReady("savings")),
+        repositories.stockOrders.subscribe(items => active && setStockOrders(items), onError, onReady("stocks")),
+        repositories.workItems.subscribe(items => active && setWorkItems(items), onError, onReady("work")),
+        repositories.workCategories.subscribe(items => active && setWorkCategories(items), onError, onReady("categories")),
+      ]);
+      if (active) unsubscribers.push(...stops);
+      else stops.forEach(stop => stop());
+    }).catch(onError);
+    return () => { active = false; unsubscribers.forEach(stop => stop()); };
   }, [repositories]);
 
   useEffect(() => {
@@ -1729,29 +1547,6 @@ export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
     const timeout = window.setTimeout(() => setToast(""), 3500);
     return () => window.clearTimeout(timeout);
   }, [toast]);
-
-  /**
-   * A brand-new user starts with the four categories the app shipped with.
-   * Deleting the last category is blocked, so an empty collection only ever
-   * means "never seeded" and this cannot resurrect a deleted category.
-   */
-  useEffect(() => {
-    if (loading || seededCategories.current || workCategories.length) return;
-    seededCategories.current = true;
-    void repositories.workCategories
-      .upsertMany(
-        WORK_CATEGORIES.map((name, index) => ({
-          id: workCategorySeedId(index),
-          name,
-          order: index,
-          source: "manual" as const,
-        })),
-      )
-      .catch((reason: unknown) => {
-        seededCategories.current = false;
-        setError(reason instanceof Error ? reason.message : "기본 카테고리를 만들지 못했습니다.");
-      });
-  }, [loading, repositories, workCategories.length]);
 
   const records = useMemo<FinanceRecord[]>(() => {
     const transactionRecords: FinanceRecord[] = transactions.map((transaction) => {
@@ -1764,13 +1559,13 @@ export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
         amount: transaction.amount,
         date: transaction.date,
         category: transaction.category,
-        source: transaction.incomeDetails?.employer || transaction.incomeDetails?.payer || transaction.incomeDetails?.sourceName,
-        account: transaction.type === "expense" ? undefined : transaction.incomeDetails?.paymentDate,
+        source: transaction.type === "expense" ? transaction.expenseDetails?.merchant : transaction.incomeDetails?.employer || transaction.incomeDetails?.payer || transaction.incomeDetails?.sourceName,
+        account: transaction.type === "expense" ? transaction.expenseDetails?.paymentMethod : transaction.incomeDetails?.paymentDate,
         payMonth: transaction.incomeDetails?.month,
         count: transaction.incomeDetails?.count,
         netAmount: transaction.incomeDetails?.netAmount,
         workItemId: transaction.workItemId ?? transaction.incomeDetails?.workItemId,
-        note: transaction.incomeDetails?.note,
+        note: transaction.type === "expense" ? transaction.expenseDetails?.note : transaction.incomeDetails?.note,
       };
     });
     const savingsRecords: FinanceRecord[] = savingsAccounts.map((account) => ({
@@ -1816,6 +1611,8 @@ export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
   );
 
   const openAdd = (kind: EntryKind = "expense") => {
+    setError("");
+    entryIdRef.current = createEntityId("record");
     setEditingRecord(null);
     setEntryDraft(defaultDraft(kind));
     setEntryOpen(true);
@@ -1823,6 +1620,8 @@ export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
   };
 
   const openEdit = (record: FinanceRecord) => {
+    setError("");
+    entryIdRef.current = record.id;
     setEditingRecord(record);
     setEntryDraft(recordToDraft(record));
     setEntryOpen(true);
@@ -1840,14 +1639,14 @@ export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
 
   const handleSaveDraft = async (draft: EntryDraft) => {
     const amount = draftAmount(draft);
-    const id = editingRecord?.id || createEntityId(draft.kind === "savings" ? "saving" : draft.kind === "stock-order" ? "order" : "transaction");
+    const id = editingRecord?.id || (entryIdRef.current ??= createEntityId("record"));
     const existingSaving = savingsAccounts.find((account) => account.id === id);
     const existingOrder = stockOrders.find((order) => order.id === id);
     const existingTransaction = transactions.find((transaction) => transaction.id === id);
     // source records where a record came from, not who last touched it, so an
     // imported record stays imported after the user edits it.
     const sourceOf = (existing?: { source?: RecordSource }): RecordSource => existing?.source ?? "manual";
-    setSaving(true);
+    if (!beginSave()) return false;
     setError("");
     try {
       if (draft.kind === "savings") {
@@ -1880,6 +1679,7 @@ export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
           source: sourceOf(existingOrder),
           broker: draft.institution.trim() || undefined,
           ticker: draft.ticker.trim().toUpperCase(),
+          currency: draft.currency,
           name: draft.title.trim() || undefined,
           side: draft.side,
           quantity: Number(draft.quantity),
@@ -1901,8 +1701,9 @@ export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
           memo: draft.title.trim() || entryLabels[draft.kind],
           date: draft.date,
           ...(isExpense
-            ? { workItemId: undefined, incomeDetails: undefined }
+            ? { workItemId: undefined, incomeDetails: undefined, expenseDetails: { paymentMethod: draft.account.trim() || undefined, merchant: draft.source.trim() || undefined, note: draft.note.trim() || undefined } }
             : {
+                expenseDetails: undefined,
                 workItemId: draft.workItemId || undefined,
                 incomeDetails: {
                   ...existingTransaction?.incomeDetails,
@@ -1928,13 +1729,13 @@ export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "내역을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.");
     } finally {
-      setSaving(false);
+      endSave();
     }
   };
 
   const handleDeleteConfirm = async () => {
     if (!deleteRecord) return;
-    setSaving(true);
+    if (!beginSave()) return false;
     setError("");
     try {
       await removeExistingRecord(deleteRecord);
@@ -1944,78 +1745,82 @@ export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "내역을 삭제하지 못했습니다. 잠시 후 다시 시도해주세요.");
     } finally {
-      setSaving(false);
+      endSave();
     }
   };
 
-  const handleCreateTask = async (task: Omit<WorkItem, "id">) => {
-    setSaving(true);
+  const handleCreateTask = async (task: WorkItem) => {
+    if (!beginSave()) return false;
     setError("");
     try {
-      await repositories.workItems.upsert({ id: createEntityId("work"), source: "manual", ...task });
+      await repositories.workItems.upsert({ source: "manual", ...task, categoryId: workCategoryFor(task, workCategories)?.id });
       setToast("작업을 추가했습니다.");
       return true;
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "작업을 저장하지 못했습니다.");
       return false;
     } finally {
-      setSaving(false);
+      endSave();
     }
   };
 
   const handleTaskStatus = async (id: string, status: WorkStatus) => {
     const task = workItems.find((item) => item.id === id);
     if (!task) return;
-    setSaving(true);
+    if (!beginSave()) return false;
     try {
       await repositories.workItems.upsert({ ...task, status });
       setToast("작업 상태를 변경했습니다.");
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "작업 상태를 변경하지 못했습니다.");
     } finally {
-      setSaving(false);
+      endSave();
     }
   };
 
   const handleUpdateTask = async (task: WorkItem) => {
-    setSaving(true);
+    if (!beginSave()) return false;
     setError("");
     try {
-      await repositories.workItems.upsert({ ...task, source: task.source || "manual" });
+      await repositories.workItems.upsert({ ...task, source: task.source || "manual", categoryId: workCategories.find(category => category.name === task.category)?.id ?? task.categoryId });
       setToast("작업을 수정했습니다.");
       return true;
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "작업을 수정하지 못했습니다.");
       return false;
     } finally {
-      setSaving(false);
+      endSave();
     }
   };
 
   const handleDeleteTask = async (task: WorkItem) => {
-    setSaving(true);
+    if (!beginSave()) return false;
     setError("");
     try {
       await repositories.workItems.remove(task.id);
       setToast("작업을 삭제했습니다.");
+      return true;
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "작업을 삭제하지 못했습니다.");
+      return false;
     } finally {
-      setSaving(false);
+      endSave();
     }
   };
+
+  const displayedWorkItems = useMemo(() => workItems.map(item => ({ ...item, category: workCategoryName(item, workCategories) })), [workItems, workCategories]);
 
   const sortedWorkCategories = useMemo(() => sortWorkCategories(workCategories), [workCategories]);
 
   const categoryTaskCount = (name: string) =>
-    workItems.filter((item) => (item.category ?? DEFAULT_WORK_CATEGORY) === name).length;
+    displayedWorkItems.filter((item) => item.category === name).length;
 
   const handleCreateCategory = async (name: string) => {
     if (workCategories.some((category) => category.name === name)) {
       setError("같은 이름의 카테고리가 이미 있습니다.");
-      return;
+      return false;
     }
-    setSaving(true);
+    if (!beginSave()) return false;
     setError("");
     try {
       const lastOrder = workCategories.reduce((max, category) => Math.max(max, category.order ?? 0), -1);
@@ -2026,10 +1831,12 @@ export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
         source: "manual",
       });
       setToast("카테고리를 추가했습니다.");
+      return true;
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "카테고리를 추가하지 못했습니다.");
+      return false;
     } finally {
-      setSaving(false);
+      endSave();
     }
   };
 
@@ -2039,25 +1846,15 @@ export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
       setError("같은 이름의 카테고리가 이미 있습니다.");
       return;
     }
-    setSaving(true);
+    if (!beginSave()) return false;
     setError("");
     try {
-      await repositories.workCategories.upsert({ ...category, name });
-      // Work items store the category name, so a rename has to travel with it
-      // or those tasks fall out of every filter that uses the new name.
-      const affected = workItems.filter(
-        (item) => (item.category ?? DEFAULT_WORK_CATEGORY) === category.name,
-      );
-      if (affected.length) {
-        await repositories.workItems.upsertMany(
-          affected.map((item) => ({ ...item, category: name })),
-        );
-      }
-      setToast(`카테고리 이름을 바꿨습니다${affected.length ? ` · 작업 ${affected.length}건 반영` : ""}.`);
+      await repositories.renameWorkCategory(category.id, name);
+      setToast("카테고리 이름을 바꿨습니다.");
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "카테고리 이름을 바꾸지 못했습니다.");
     } finally {
-      setSaving(false);
+      endSave();
     }
   };
 
@@ -2071,7 +1868,7 @@ export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
       setError("카테고리는 최소 한 개가 필요합니다.");
       return;
     }
-    setSaving(true);
+    if (!beginSave()) return false;
     setError("");
     try {
       await repositories.workCategories.remove(category.id);
@@ -2079,7 +1876,7 @@ export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
     } catch (reason: unknown) {
       setError(reason instanceof Error ? reason.message : "카테고리를 삭제하지 못했습니다.");
     } finally {
-      setSaving(false);
+      endSave();
     }
   };
 
@@ -2101,7 +1898,9 @@ export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
       );
       return null;
     } catch (reason: unknown) {
-      return reason instanceof Error ? reason.message : "엑셀 내역을 저장하지 못했습니다.";
+      const message = reason instanceof Error ? reason.message : "엑셀 내역을 저장하지 못했습니다.";
+      setError(message);
+      return message;
     } finally {
       setImporting(false);
     }
@@ -2147,9 +1946,10 @@ export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
           </div>
         </nav>
         <div className="border-t border-line p-3">
+          <button type="button" onClick={() => setBackupOpen(true)} className="mb-2 min-h-11 w-full rounded-2xl border border-line px-3 text-left text-sm text-body focus-visible:ring-2 focus-visible:ring-emerald-300">백업·복원</button>
           <div className="flex items-center gap-2 rounded-2xl bg-card px-3 py-2.5" aria-label="저장 상태">
-            <span className="h-2 w-2 rounded-full bg-emerald-400" />
-            <span className="text-[11px] text-faint">안전하게 저장됨</span>
+            <span className={`h-2 w-2 rounded-full ${error ? "bg-rose-400" : saving || importing ? "bg-amber-400" : "bg-emerald-400"}`} />
+            <span role="status" className="text-[11px] text-faint">{loading ? "불러오는 중…" : saving ? "저장 중…" : importing ? "처리 중…" : error ? "저장 확인 필요" : toast ? "처리 완료" : demo ? "데모 · 임시 기록" : "기록 조회 완료"}</span>
           </div>
         </div>
       </aside>
@@ -2167,16 +1967,6 @@ export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-2 sm:gap-2.5">
-              <label className="hidden items-center gap-2 rounded-2xl border border-line bg-card px-3 py-2 xl:flex">
-                <Icon name="calendar" size={15} className="text-faint" />
-                <span className="sr-only">기준 월</span>
-                <input
-                  type="month"
-                  value={selectedMonth}
-                  onChange={(event) => setSelectedMonth(event.target.value)}
-                  className="w-[115px] bg-transparent text-xs text-body outline-none"
-                />
-              </label>
               <ThemeToggle />
               <button
                 type="button"
@@ -2219,20 +2009,22 @@ export default function GagebuDashboard({ demo = false }: { demo?: boolean }) {
         </header>
 
         <main className="mx-auto max-w-[1440px] px-4 pb-8 pt-4 sm:px-7 sm:pt-5 xl:px-10">
-          <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm text-faint">{activeView === "overview" ? "오늘의 금융 흐름을 가볍게 확인해보세요." : activeNav.description}</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{activeNav.label}</h2></div><div className="flex items-center gap-2 sm:hidden"><label className="flex flex-1 items-center gap-2 rounded-2xl border border-line bg-card px-3 py-0"><Icon name="calendar" size={15} className="text-faint" /><span className="sr-only">기준 월</span><input type="month" value={selectedMonth} onChange={(event) => setSelectedMonth(event.target.value)} className="h-11 w-full bg-transparent text-xs text-body outline-none" /></label><button type="button" onClick={() => setImportOpen(true)} aria-label="엑셀 가져오기" className="flex h-11 w-11 items-center justify-center rounded-2xl border border-sky-400/20 text-sky-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="upload" size={16} /></button></div></div>
-          {error && <div role="alert" className="mb-5 flex items-start gap-3 rounded-3xl border border-rose-400/20 bg-rose-500/[0.07] px-4 py-3 text-sm text-rose-100"><Icon name="info" size={17} className="mt-0.5 text-rose-200" /><div className="flex-1"><p className="font-medium">데이터를 불러오는 중 문제가 생겼습니다.</p><p className="mt-1 text-xs text-rose-100/70">{error}</p></div><button type="button" onClick={() => setError("")} aria-label="오류 닫기" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl p-1 text-rose-200/70 hover:bg-rose-500/10 hover:text-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 lg:h-8 lg:w-8"><Icon name="close" size={15} /></button></div>}
-          {activeView === "overview" && <OverviewPanel records={records} tasks={workItems} month={selectedMonth} loading={loading} onNavigate={setActiveView} onAdd={openAdd} onOpenImport={() => setImportOpen(true)} onOpenDetail={setDetailRecord} />}
+          <button type="button" onClick={() => setBackupOpen(true)} className="mb-3 min-h-11 rounded-xl border border-line px-3 text-xs text-body focus-visible:ring-2 focus-visible:ring-emerald-300 lg:hidden">백업·복원</button>
+          <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><p className="text-sm text-faint">{activeView === "overview" ? "오늘의 금융 흐름을 가볍게 확인해보세요." : activeNav.description}</p><h2 className="mt-1 text-2xl font-semibold tracking-tight text-ink sm:text-3xl">{activeNav.label}</h2></div>{activeView === "overview" && <div className="flex items-center gap-2"><label className="flex flex-1 items-center gap-2 rounded-2xl border border-line bg-card px-3 py-0"><Icon name="calendar" size={15} className="text-faint" /><span className="sr-only">기준 월</span><input type="month" value={selectedMonth} onChange={(event) => { if (event.target.value) setSelectedMonth(event.target.value); }} className="h-11 w-full bg-transparent text-xs text-body outline-none" /></label><button type="button" onClick={() => setImportOpen(true)} aria-label="엑셀 가져오기" className="flex h-11 w-11 items-center justify-center rounded-2xl border border-sky-400/20 text-sky-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><Icon name="upload" size={16} /></button></div>}</div>
+          {error && <div role="alert" className="mb-5 flex items-start gap-3 rounded-3xl border border-rose-400/20 bg-rose-500/[0.07] px-4 py-3 text-sm text-rose-100"><Icon name="info" size={17} className="mt-0.5 text-rose-200" /><div className="flex-1"><p className="font-medium">작업을 완료하지 못했습니다.</p><p className="mt-1 text-xs text-rose-100/70">{error}</p></div><button type="button" onClick={() => setError("")} aria-label="오류 닫기" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl p-1 text-rose-200/70 hover:bg-rose-500/10 hover:text-rose-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-rose-300 lg:h-8 lg:w-8"><Icon name="close" size={15} /></button></div>}
+          {activeView === "overview" && <OverviewPanel records={records} tasks={displayedWorkItems} month={selectedMonth} loading={loading} onNavigate={setActiveView} onAdd={openAdd} onOpenImport={() => setImportOpen(true)} onOpenDetail={setDetailRecord} />}
           {activeView === "transactions" && <TransactionsPanel records={records} month={selectedMonth} setMonth={setSelectedMonth} year={selectedYear} setYear={setSelectedYear} onAdd={openAdd} onOpenDetail={setDetailRecord} onOpenImport={() => setImportOpen(true)} />}
           {activeView === "assets" && <AssetsPanel records={records} year={selectedYear} setYear={setSelectedYear} onAdd={openAdd} onOpenDetail={setDetailRecord} />}
-          {activeView === "tasks" && <TasksPanel tasks={workItems} categories={sortedWorkCategories} saving={saving} onStatusChange={handleTaskStatus} onCreateTask={handleCreateTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onCreateCategory={handleCreateCategory} onRenameCategory={handleRenameCategory} onDeleteCategory={handleDeleteCategory} />}
+          {activeView === "tasks" && <TasksPanel error={error} tasks={displayedWorkItems} categories={sortedWorkCategories} saving={saving} onStatusChange={handleTaskStatus} onCreateTask={handleCreateTask} onUpdateTask={handleUpdateTask} onDeleteTask={handleDeleteTask} onCreateCategory={handleCreateCategory} onRenameCategory={handleRenameCategory} onDeleteCategory={handleDeleteCategory} />}
         </main>
       </div>
 
       {toast && <div role="status" aria-live="polite" className="fixed bottom-5 left-1/2 z-[70] flex -translate-x-1/2 items-center gap-2 rounded-3xl border border-emerald-400/20 bg-surface-strong px-4 py-3 text-sm text-emerald-100 shadow-2xl shadow-black/40"><Icon name="check" size={16} className="text-emerald-300" />{toast}</div>}
-      <DetailModal record={detailRecord} onClose={() => setDetailRecord(null)} onEdit={openEdit} onDelete={(record) => setDeleteRecord(record)} />
-      <DeleteDialog record={deleteRecord} onClose={() => setDeleteRecord(null)} onConfirm={handleDeleteConfirm} />
-      <EntryModal open={entryOpen} initial={entryDraft} editingId={editingRecord?.id} workItems={workItems} saving={saving} onClose={() => { if (!saving) { setEntryOpen(false); setEditingRecord(null); } }} onSave={handleSaveDraft} />
+      <DetailModal record={detailRecord} onClose={() => setDetailRecord(null)} onEdit={openEdit} onDelete={(record) => { setDetailRecord(null); setDeleteRecord(record); }} />
+      <DeleteDialog saving={saving} error={error} record={deleteRecord} onClose={() => { if (!saving) setDeleteRecord(null); }} onConfirm={handleDeleteConfirm} />
+      <EntryModal error={error} open={entryOpen} initial={entryDraft} editingId={editingRecord?.id} workItems={displayedWorkItems} saving={saving} onClose={() => { if (!saving) { setEntryOpen(false); setEditingRecord(null); } }} onSave={handleSaveDraft} />
       {importOpen && <ImportModal importing={importing} onClose={() => { if (!importing) setImportOpen(false); }} onImport={handleImport} existingFingerprints={existingFingerprints} />}
+      {backupOpen && <BackupModal repositories={repositories} onClose={() => setBackupOpen(false)} onSaved={setToast} onBusyChange={setImporting} onError={setError} />}
     </div>
   );
 }
