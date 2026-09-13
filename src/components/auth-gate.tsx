@@ -20,10 +20,10 @@ import {
 } from "firebase/auth";
 import ThemeToggle from "./theme-toggle";
 import {
-  allowedGoogleEmails,
   auth,
-  isAllowedFirebaseUser,
+  hasFirestoreAccess,
   isFirebaseConfigured,
+  isGoogleFirebaseUser,
 } from "@/lib/firebase";
 
 // Dev-only escape hatch: skips the Google gate so the dashboard can be opened
@@ -34,8 +34,11 @@ const devAuthBypass =
 
 type AuthState =
   | { status: "loading" }
+  | { status: "checking" }
   | { status: "signed-out"; message?: string }
   | { status: "allowed"; user: User };
+
+const NO_ACCESS_MESSAGE = "이 Google 계정은 접근 권한이 없습니다.";
 
 const AuthenticatedUserContext = createContext<User | null>(null);
 
@@ -78,45 +81,60 @@ function authErrorCode(error: unknown): string {
 
 export default function AuthGate({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(() =>
-    isFirebaseConfigured && auth && allowedGoogleEmails.length
-      ? { status: "loading" }
-      : { status: "signed-out" },
+    isFirebaseConfigured && auth ? { status: "loading" } : { status: "signed-out" },
   );
   const [signingIn, setSigningIn] = useState(false);
 
   useEffect(() => {
-    if (!isFirebaseConfigured || !auth || !allowedGoogleEmails.length) {
+    if (!isFirebaseConfigured || !auth) {
       return;
     }
 
     const firebaseAuth = auth;
     let active = true;
 
-    const applyUser = (user: User | null) => {
+    // Firestore, not a bundled list, decides who gets in. The probe runs after
+    // sign-in because the rules answer for an authenticated caller only.
+    const applyUser = async (user: User | null) => {
       if (!active) return;
-      if (isAllowedFirebaseUser(user)) {
-        setState({ status: "allowed", user: user as User });
+      if (!isGoogleFirebaseUser(user)) {
+        // Signing a refused account out fires this listener again. Keep the
+        // refusal on screen instead of letting it blank the reason.
+        setState((previous) =>
+          previous.status === "signed-out" && previous.message === NO_ACCESS_MESSAGE
+            ? previous
+            : { status: "signed-out" },
+        );
         return;
       }
-      if (user) {
-        void signOut(firebaseAuth).finally(() => {
-          if (!active) return;
-          setState({
-            status: "signed-out",
-            message: "이 Google 계정은 접근 권한이 없습니다.",
-          });
-        });
+      setState({ status: "checking" });
+      let allowed = false;
+      try {
+        allowed = await hasFirestoreAccess(user);
+      } catch {
+        // A network failure is not a refusal, so the account keeps its session
+        // and the dashboard reports the error it runs into.
+        if (!active) return;
+        setState({ status: "allowed", user });
         return;
       }
-      setState({ status: "signed-out" });
+      if (!active) return;
+      if (allowed) {
+        setState({ status: "allowed", user });
+        return;
+      }
+      setState({ status: "signed-out", message: NO_ACCESS_MESSAGE });
+      void signOut(firebaseAuth);
     };
 
-    const unsubscribe = onAuthStateChanged(firebaseAuth, applyUser);
+    const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
+      void applyUser(user);
+    });
     void (async () => {
       try {
         await setPersistence(firebaseAuth, browserLocalPersistence);
         const redirectResult = await getRedirectResult(firebaseAuth);
-        if (redirectResult) applyUser(redirectResult.user);
+        if (redirectResult) await applyUser(redirectResult.user);
       } catch (error) {
         if (!active) return;
         setState({
@@ -141,16 +159,9 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
       try {
-        const result = await signInWithPopup(auth, provider);
-        if (isAllowedFirebaseUser(result.user)) {
-          setState({ status: "allowed", user: result.user });
-          return;
-        }
-        await signOut(auth);
-        setState({
-          status: "signed-out",
-          message: "이 Google 계정은 접근 권한이 없습니다.",
-        });
+        // The onAuthStateChanged handler runs the Firestore probe and settles
+        // the state, so nothing is decided here.
+        await signInWithPopup(auth, provider);
       } catch (error) {
         if (authErrorCode(error) === "auth/popup-blocked") {
           await signInWithRedirect(auth, provider);
@@ -178,7 +189,6 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   }
 
   const missingFirebase = !isFirebaseConfigured;
-  const missingAllowlist = !allowedGoogleEmails.length;
 
   return (
     <main className="app-glow relative flex min-h-screen items-center justify-center bg-app px-5 text-ink">
@@ -194,12 +204,12 @@ export default function AuthGate({ children }: { children: ReactNode }) {
           등록된 Google 계정으로 로그인해야 가계부를 열 수 있습니다.
         </p>
 
-        {state.status === "loading" ? (
+        {state.status === "loading" || state.status === "checking" ? (
           <div className="mt-8 h-12 animate-pulse rounded-2xl bg-hover" />
         ) : (
           <button
             type="button"
-            disabled={signingIn || missingFirebase || missingAllowlist}
+            disabled={signingIn || missingFirebase}
             onClick={() => void handleGoogleSignIn()}
             className="mt-8 flex h-12 w-full items-center justify-center gap-3 rounded-2xl bg-[#ffffff] px-4 text-sm font-semibold text-[#1f2937] shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:bg-[#f4f4f5] disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -208,11 +218,9 @@ export default function AuthGate({ children }: { children: ReactNode }) {
           </button>
         )}
 
-        {(missingFirebase || missingAllowlist) && (
+        {missingFirebase && (
           <p className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-400/10 px-3 py-2.5 text-xs leading-5 text-amber-200">
-            {missingFirebase
-              ? "Firebase 환경변수 설정이 필요합니다."
-              : "허용할 Google 이메일 환경변수 설정이 필요합니다."}
+            Firebase 환경변수 설정이 필요합니다.
           </p>
         )}
         {state.status === "signed-out" && state.message && (

@@ -27,17 +27,40 @@ const app = isFirebaseConfigured
 export const auth = app ? getAuth(app) : null;
 export const db = app ? getFirestore(app) : null;
 
-/** Comma-separated NEXT_PUBLIC_ALLOWED_GOOGLE_EMAIL. Keep firestore.rules in sync. */
-export const allowedGoogleEmails = (process.env.NEXT_PUBLIC_ALLOWED_GOOGLE_EMAIL ?? "")
-  .split(",")
-  .map((email) => email.trim().toLowerCase())
-  .filter(Boolean);
-
-export function isAllowedFirebaseUser(user: User | null): boolean {
-  if (!user || !allowedGoogleEmails.length) return false;
-  const usesGoogle = user.providerData.some(
+/**
+ * Who may read and write is decided by firestore.rules alone. A second list
+ * shipped in the bundle could only ever drift from it, and it protected
+ * nothing: NEXT_PUBLIC_ values are readable in the served JavaScript and a
+ * caller can skip this UI and reach Firestore directly. This check therefore
+ * establishes identity, never authorization.
+ */
+export function isGoogleFirebaseUser(user: User | null): user is User {
+  if (!user) return false;
+  return user.providerData.some(
     (provider) => provider.providerId === "google.com",
   );
-  const email = user.email?.trim().toLowerCase() ?? "";
-  return usesGoogle && allowedGoogleEmails.includes(email);
+}
+
+/**
+ * Asks Firestore whether this user is allowed, instead of guessing from a
+ * bundled list. The marker document is read with the same `isOwner` rule that
+ * guards every collection, so a rejected read means the rules reject the
+ * account. A missing document still reads successfully and is not a refusal.
+ */
+export async function hasFirestoreAccess(user: User): Promise<boolean> {
+  if (!db) return false;
+  const { doc, getDoc } = await import("firebase/firestore");
+  try {
+    await getDoc(doc(db, "users", user.uid, "settings", "workCategories"));
+    return true;
+  } catch (error) {
+    if (isPermissionDenied(error)) return false;
+    throw error;
+  }
+}
+
+export function isPermissionDenied(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = "code" in error ? String(error.code) : "";
+  return code === "permission-denied" || code === "firestore/permission-denied";
 }
