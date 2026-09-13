@@ -21,9 +21,9 @@ import {
 import ThemeToggle from "./theme-toggle";
 import {
   auth,
-  hasFirestoreAccess,
   isFirebaseConfigured,
   isGoogleFirebaseUser,
+  probeFirestoreAccess,
 } from "@/lib/firebase";
 
 // Dev-only escape hatch: skips the Google gate so the dashboard can be opened
@@ -92,12 +92,21 @@ export default function AuthGate({ children }: { children: ReactNode }) {
 
     const firebaseAuth = auth;
     let active = true;
+    // Both the listener and getRedirectResult report the same sign-in, and an
+    // account can be swapped while a probe is still in flight. Each call takes
+    // a ticket so a late answer cannot overwrite a newer one, and an account
+    // already decided is not probed a second time.
+    let ticket = 0;
+    let probedUid: string | null = null;
 
     // Firestore, not a bundled list, decides who gets in. The probe runs after
     // sign-in because the rules answer for an authenticated caller only.
     const applyUser = async (user: User | null) => {
+      const mine = ++ticket;
+      const current = () => active && ticket === mine;
       if (!active) return;
       if (!isGoogleFirebaseUser(user)) {
+        probedUid = null;
         // Signing a refused account out fires this listener again. Keep the
         // refusal on screen instead of letting it blank the reason.
         setState((previous) =>
@@ -107,24 +116,20 @@ export default function AuthGate({ children }: { children: ReactNode }) {
         );
         return;
       }
+      if (probedUid === user.uid) return;
+      probedUid = user.uid;
       setState({ status: "checking" });
-      let allowed = false;
-      try {
-        allowed = await hasFirestoreAccess(user);
-      } catch {
-        // A network failure is not a refusal, so the account keeps its session
-        // and the dashboard reports the error it runs into.
-        if (!active) return;
-        setState({ status: "allowed", user });
+      const access = await probeFirestoreAccess(user);
+      if (!current()) return;
+      if (access === "refused") {
+        probedUid = null;
+        setState({ status: "signed-out", message: NO_ACCESS_MESSAGE });
+        void signOut(firebaseAuth).catch(() => {});
         return;
       }
-      if (!active) return;
-      if (allowed) {
-        setState({ status: "allowed", user });
-        return;
-      }
-      setState({ status: "signed-out", message: NO_ACCESS_MESSAGE });
-      void signOut(firebaseAuth);
+      // "unreachable" keeps the session: the rules, not this probe, are the
+      // boundary, and the dashboard reports whatever error it runs into.
+      setState({ status: "allowed", user });
     };
 
     const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {

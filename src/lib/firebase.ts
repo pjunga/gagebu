@@ -1,6 +1,6 @@
 import { getApp, getApps, initializeApp } from "firebase/app";
 import { getAuth, type User } from "firebase/auth";
-import { getFirestore } from "firebase/firestore";
+import { doc, getDoc, getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -41,21 +41,46 @@ export function isGoogleFirebaseUser(user: User | null): user is User {
   );
 }
 
+/** What the rules answered, or that they never got the chance to answer. */
+export type AccessProbe = "allowed" | "refused" | "unreachable";
+
+/**
+ * How long to wait for the rules to answer. Firestore retries a failed
+ * connection on its own and `getDoc` can stay pending far longer than a login
+ * screen should, so an unanswered probe is cut off rather than left hanging.
+ */
+const ACCESS_PROBE_TIMEOUT_MS = 10_000;
+
 /**
  * Asks Firestore whether this user is allowed, instead of guessing from a
  * bundled list. The marker document is read with the same `isOwner` rule that
  * guards every collection, so a rejected read means the rules reject the
  * account. A missing document still reads successfully and is not a refusal.
+ *
+ * Only an explicit `permission-denied` counts as a refusal. Anything else —
+ * an unreachable backend, a timeout, an error this code does not recognise —
+ * is reported as `unreachable`, because the probe is a courtesy that names the
+ * problem early, not the boundary. The boundary is the rules, and they are
+ * enforced on every request whatever this function returns.
  */
-export async function hasFirestoreAccess(user: User): Promise<boolean> {
-  if (!db) return false;
-  const { doc, getDoc } = await import("firebase/firestore");
+export async function probeFirestoreAccess(user: User): Promise<AccessProbe> {
+  if (!db) return "unreachable";
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const answered = (async (): Promise<AccessProbe> => {
+    try {
+      await getDoc(doc(db, "users", user.uid, "settings", "workCategories"));
+      return "allowed";
+    } catch (error) {
+      return isPermissionDenied(error) ? "refused" : "unreachable";
+    }
+  })();
+  const timedOut = new Promise<AccessProbe>((resolve) => {
+    timer = setTimeout(() => resolve("unreachable"), ACCESS_PROBE_TIMEOUT_MS);
+  });
   try {
-    await getDoc(doc(db, "users", user.uid, "settings", "workCategories"));
-    return true;
-  } catch (error) {
-    if (isPermissionDenied(error)) return false;
-    throw error;
+    return await Promise.race([answered, timedOut]);
+  } finally {
+    clearTimeout(timer);
   }
 }
 
