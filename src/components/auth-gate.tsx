@@ -20,10 +20,10 @@ import {
 } from "firebase/auth";
 import ThemeToggle from "./theme-toggle";
 import {
-  allowedGoogleEmails,
   auth,
-  isAllowedFirebaseUser,
   isFirebaseConfigured,
+  isGoogleFirebaseUser,
+  probeFirestoreAccess,
 } from "@/lib/firebase";
 
 // Dev-only escape hatch: skips the Google gate so the dashboard can be opened
@@ -34,8 +34,11 @@ const devAuthBypass =
 
 type AuthState =
   | { status: "loading" }
+  | { status: "checking" }
   | { status: "signed-out"; message?: string }
   | { status: "allowed"; user: User };
+
+const NO_ACCESS_MESSAGE = "이 Google 계정은 접근 권한이 없습니다.";
 
 const AuthenticatedUserContext = createContext<User | null>(null);
 
@@ -78,47 +81,84 @@ function authErrorCode(error: unknown): string {
 
 export default function AuthGate({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>(() =>
-    isFirebaseConfigured && auth && allowedGoogleEmails.length
-      ? { status: "loading" }
-      : { status: "signed-out" },
+    isFirebaseConfigured && auth ? { status: "loading" } : { status: "signed-out" },
   );
   const [signingIn, setSigningIn] = useState(false);
 
   useEffect(() => {
-    if (!isFirebaseConfigured || !auth || !allowedGoogleEmails.length) {
+    if (!isFirebaseConfigured || !auth) {
       return;
     }
 
     const firebaseAuth = auth;
     let active = true;
+    // Both the listener and getRedirectResult report the same sign-in, and an
+    // account can be swapped while a probe is still in flight. Each call takes
+    // a ticket so a late answer cannot overwrite a newer one, and an account
+    // already decided is not probed a second time.
+    let ticket = 0;
+    let probedUid: string | null = null;
+    // Whether a signed-in account has taken over the screen. The redirect
+    // handler below reports its own failure only while nothing has.
+    let handlingUser = false;
 
-    const applyUser = (user: User | null) => {
+    // Firestore, not a bundled list, decides who gets in. The probe runs after
+    // sign-in because the rules answer for an authenticated caller only.
+    const applyUser = async (user: User | null) => {
       if (!active) return;
-      if (isAllowedFirebaseUser(user)) {
-        setState({ status: "allowed", user: user as User });
+      if (!isGoogleFirebaseUser(user)) {
+        ticket += 1;
+        probedUid = null;
+        handlingUser = false;
+        // Signing a refused account out fires this listener again, and a
+        // failed redirect can land either side of it. Whoever put a reason on
+        // screen keeps it; the next sign-in attempt clears it deliberately.
+        setState((previous) =>
+          previous.status === "signed-out" && previous.message
+            ? previous
+            : { status: "signed-out" },
+        );
         return;
       }
-      if (user) {
-        void signOut(firebaseAuth).finally(() => {
-          if (!active) return;
-          setState({
-            status: "signed-out",
-            message: "이 Google 계정은 접근 권한이 없습니다.",
-          });
-        });
+      // Checked before the ticket moves: bumping it here would strand the
+      // probe already running for this account and leave the gate checking.
+      if (probedUid === user.uid) return;
+      probedUid = user.uid;
+      handlingUser = true;
+      const mine = ++ticket;
+      const current = () => active && ticket === mine;
+      setState({ status: "checking" });
+      const access = await probeFirestoreAccess(user);
+      if (!current()) return;
+      if (access === "refused") {
+        probedUid = null;
+        handlingUser = false;
+        setState({ status: "signed-out", message: NO_ACCESS_MESSAGE });
+        void signOut(firebaseAuth).catch(() => {});
         return;
       }
-      setState({ status: "signed-out" });
+      // "unreachable" keeps the session: the rules, not this probe, are the
+      // boundary, and the dashboard reports whatever error it runs into. The
+      // account is left unprobed so a later report asks again rather than
+      // carrying one failed read for the rest of the session.
+      // ponytail: no retry on reconnect; add one if the shell proves confusing
+      // to sit in while every request comes back permission-denied.
+      if (access === "unreachable") probedUid = null;
+      setState({ status: "allowed", user });
     };
 
-    const unsubscribe = onAuthStateChanged(firebaseAuth, applyUser);
+    const unsubscribe = onAuthStateChanged(firebaseAuth, (user) => {
+      void applyUser(user);
+    });
     void (async () => {
       try {
         await setPersistence(firebaseAuth, browserLocalPersistence);
         const redirectResult = await getRedirectResult(firebaseAuth);
-        if (redirectResult) applyUser(redirectResult.user);
+        if (redirectResult) await applyUser(redirectResult.user);
       } catch (error) {
-        if (!active) return;
+        // A signed-in account already owns the screen, so a redirect that
+        // failed on the side must not push it back to the login form.
+        if (!active || handlingUser) return;
         setState({
           status: "signed-out",
           message: friendlyAuthError(error),
@@ -141,16 +181,9 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
       try {
-        const result = await signInWithPopup(auth, provider);
-        if (isAllowedFirebaseUser(result.user)) {
-          setState({ status: "allowed", user: result.user });
-          return;
-        }
-        await signOut(auth);
-        setState({
-          status: "signed-out",
-          message: "이 Google 계정은 접근 권한이 없습니다.",
-        });
+        // The onAuthStateChanged handler runs the Firestore probe and settles
+        // the state, so nothing is decided here.
+        await signInWithPopup(auth, provider);
       } catch (error) {
         if (authErrorCode(error) === "auth/popup-blocked") {
           await signInWithRedirect(auth, provider);
@@ -178,7 +211,6 @@ export default function AuthGate({ children }: { children: ReactNode }) {
   }
 
   const missingFirebase = !isFirebaseConfigured;
-  const missingAllowlist = !allowedGoogleEmails.length;
 
   return (
     <main className="app-glow relative flex min-h-screen items-center justify-center bg-app px-5 text-ink">
@@ -194,12 +226,12 @@ export default function AuthGate({ children }: { children: ReactNode }) {
           등록된 Google 계정으로 로그인해야 가계부를 열 수 있습니다.
         </p>
 
-        {state.status === "loading" ? (
+        {state.status === "loading" || state.status === "checking" ? (
           <div className="mt-8 h-12 animate-pulse rounded-2xl bg-hover" />
         ) : (
           <button
             type="button"
-            disabled={signingIn || missingFirebase || missingAllowlist}
+            disabled={signingIn || missingFirebase}
             onClick={() => void handleGoogleSignIn()}
             className="mt-8 flex h-12 w-full items-center justify-center gap-3 rounded-2xl bg-[#ffffff] px-4 text-sm font-semibold text-[#1f2937] shadow-lg shadow-black/10 transition hover:-translate-y-0.5 hover:bg-[#f4f4f5] disabled:cursor-not-allowed disabled:opacity-50"
           >
@@ -208,11 +240,9 @@ export default function AuthGate({ children }: { children: ReactNode }) {
           </button>
         )}
 
-        {(missingFirebase || missingAllowlist) && (
+        {missingFirebase && (
           <p className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-400/10 px-3 py-2.5 text-xs leading-5 text-amber-200">
-            {missingFirebase
-              ? "Firebase 환경변수 설정이 필요합니다."
-              : "허용할 Google 이메일 환경변수 설정이 필요합니다."}
+            Firebase 환경변수 설정이 필요합니다.
           </p>
         )}
         {state.status === "signed-out" && state.message && (

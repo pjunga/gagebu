@@ -2,11 +2,13 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Keep this list in sync with the comma-separated
-    // NEXT_PUBLIC_ALLOWED_GOOGLE_EMAIL before deploying these rules.
+    // The only place access is granted. The app ships no second list to keep
+    // in sync; it asks Firestore whether the signed-in account is allowed.
+    // Adding or removing someone means editing this list and deploying.
     function isAllowedGoogleUser() {
       return request.auth != null
         && request.auth.token.firebase.sign_in_provider == "google.com"
+        && request.auth.token.email_verified == true
         && request.auth.token.email in [
           "pjunga0730@gmail.com",
           "chihoyoon1217@gmail.com"

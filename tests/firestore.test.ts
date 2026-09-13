@@ -13,7 +13,7 @@ let environment: RulesTestEnvironment;
 before(async () => { environment = await initializeTestEnvironment({ projectId: "demo-gagebu", firestore: { host: "127.0.0.1", port: 8180, rules: readFileSync("firestore.rules", "utf8") } }); });
 beforeEach(async () => { await environment.clearFirestore(); });
 after(async () => { await environment?.cleanup(); });
-const database = (uid = "owner", email = "pjunga0730@gmail.com") => environment.authenticatedContext(uid, { email, firebase: { sign_in_provider: "google.com" } }).firestore() as unknown as Firestore;
+const database = (uid = "owner", email = "pjunga0730@gmail.com", emailVerified = true) => environment.authenticatedContext(uid, { email, email_verified: emailVerified, firebase: { sign_in_provider: "google.com" } }).firestore() as unknown as Firestore;
 const repositories = (db = database(), userId = "owner") => createFirebaseRepositories({ firestore: db, userId });
 
 test("expense fields, zero balance and closing/reopening round-trip under real rules", async () => {
@@ -105,6 +105,9 @@ test("rules reject another user's records, unauthorized accounts and unknown fie
   const db = database();
   await assertFails(getDocs(collection(db, "users/another-user/transactions")));
   await assertFails(getDoc(doc(database("owner", "unlisted@example.com"), "users/owner/workCategories/example")));
+  // The rules are the only gate now, so an unverified address must not pass
+  // even when it spells an allowed one.
+  await assertFails(getDoc(doc(database("owner", "pjunga0730@gmail.com", false), "users/owner/workCategories/example")));
   await assertFails(setDoc(doc(db, "users/owner/workCategories/example"), { id: "example", name: "카테고리", extra: "unknown" }));
   await assertFails(setDoc(doc(db, "users/owner/transactions/example"), { id: "example", type: "expense", date: "2026-09-01", amount: 1, expenseDetails: { note: 42 } }));
 });

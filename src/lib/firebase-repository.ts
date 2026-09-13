@@ -19,7 +19,7 @@ import {
 import {
   auth,
   db,
-  isAllowedFirebaseUser,
+  isGoogleFirebaseUser,
   isFirebaseConfigured,
 } from "./firebase";
 import {
@@ -89,8 +89,10 @@ async function getUserId(): Promise<string> {
     });
   }
   const user = auth.currentUser;
-  if (!user || !isAllowedFirebaseUser(user)) {
-    throw new RepositoryError("허용된 Google 계정으로 로그인해주세요.", {
+  // Only the sign-in state is checked here. Whether this account may touch the
+  // data is firestore.rules' decision, and it is enforced on every request.
+  if (!isGoogleFirebaseUser(user)) {
+    throw new RepositoryError("Google 계정으로 로그인해주세요.", {
       code: "firebase/auth-required",
       operation: "authenticate",
     });
