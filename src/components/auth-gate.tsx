@@ -102,10 +102,9 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     // Firestore, not a bundled list, decides who gets in. The probe runs after
     // sign-in because the rules answer for an authenticated caller only.
     const applyUser = async (user: User | null) => {
-      const mine = ++ticket;
-      const current = () => active && ticket === mine;
       if (!active) return;
       if (!isGoogleFirebaseUser(user)) {
+        ticket += 1;
         probedUid = null;
         // Signing a refused account out fires this listener again. Keep the
         // refusal on screen instead of letting it blank the reason.
@@ -116,8 +115,12 @@ export default function AuthGate({ children }: { children: ReactNode }) {
         );
         return;
       }
+      // Checked before the ticket moves: bumping it here would strand the
+      // probe already running for this account and leave the gate checking.
       if (probedUid === user.uid) return;
       probedUid = user.uid;
+      const mine = ++ticket;
+      const current = () => active && ticket === mine;
       setState({ status: "checking" });
       const access = await probeFirestoreAccess(user);
       if (!current()) return;
