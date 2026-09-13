@@ -48,12 +48,15 @@ export function AuthAccountControls() {
   if (!user) return null;
 
   return (
-    <div className="flex min-w-0 shrink-0 items-center gap-2 rounded-2xl border border-line bg-card px-2.5 py-0 text-xs text-body backdrop-blur lg:py-1.5">
+    // The frame belongs to the address beside the button. Below 2xl the address
+    // is hidden, so the frame would only draw a second border around the one
+    // control left inside it.
+    <div className="flex min-w-0 shrink-0 items-center gap-2 text-xs text-body 2xl:rounded-2xl 2xl:border 2xl:border-line 2xl:bg-card 2xl:px-2.5 2xl:py-1.5 2xl:backdrop-blur">
       <span className="hidden max-w-40 truncate 2xl:inline">{user.email}</span>
       <button
         type="button"
         onClick={() => auth && void signOut(auth)}
-        className="min-h-11 shrink-0 rounded-xl border border-line px-2.5 py-1.5 text-body transition hover:border-line-strong hover:bg-hover lg:min-h-0"
+        className="inline-flex h-11 shrink-0 items-center rounded-2xl border border-line px-3 text-body transition hover:border-line-strong hover:bg-hover lg:h-10 2xl:h-auto 2xl:rounded-xl 2xl:px-2.5 2xl:py-1.5"
       >
         로그아웃
       </button>
