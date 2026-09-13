@@ -84,6 +84,9 @@ test("zero balance survives unchanged save and closing/reopening; foreign inputs
   await page.getByRole("button", { name: "수정", exact: true }).click();
   await expect(page.getByLabel("주문 단가 (USD)")).toHaveValue("210");
   await expect(page.getByRole("dialog")).toContainText("$420.00");
+  // 다른 유형을 눌러봐도 주식 주문 버튼은 남아 있어 되돌릴 수 있다
+  await page.getByRole("dialog").getByRole("button", { name: "수입", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "주식 주문", exact: true }).click();
   await page.getByRole("button", { name: "변경 저장", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect((await stored(page, "stockOrders")).find(item => item.id === "usd")).toMatchObject({ currency: "USD", fee: 1.5, totalAmount: 420 });

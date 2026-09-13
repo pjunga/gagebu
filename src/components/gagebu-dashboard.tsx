@@ -486,7 +486,7 @@ function EntryModal({
           <fieldset>
             <legend className="text-xs font-medium text-body">기록 유형</legend>
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
-              {(draft.kind === "stock-order" ? [...entryKindOptions, "stock-order" as EntryKind] : entryKindOptions).map((kind) => {
+              {(initial.kind === "stock-order" ? [...entryKindOptions, "stock-order" as EntryKind] : entryKindOptions).map((kind) => {
                 const selected = draft.kind === kind;
                 return (
                   <button
