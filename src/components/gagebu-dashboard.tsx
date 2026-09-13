@@ -59,7 +59,8 @@ const currentMonth = () => currentDate().slice(0, 7);
 const currentYear = () => currentDate().slice(0, 4);
 
 const entryLabels: Record<EntryKind, string> = {
-  expense: "일반 지출",
+  expense: "지출",
+  income: "수입",
   salary: "급여",
   "side-income": "부수입",
   savings: "예금·적금",
@@ -68,6 +69,7 @@ const entryLabels: Record<EntryKind, string> = {
 
 const entryIcons: Record<EntryKind, IconName> = {
   expense: "arrow-down",
+  income: "arrow-up",
   salary: "briefcase",
   "side-income": "sparkles",
   savings: "wallet",
@@ -76,6 +78,7 @@ const entryIcons: Record<EntryKind, IconName> = {
 
 const entryTones: Record<EntryKind, string> = {
   expense: "rose",
+  income: "violet",
   salary: "emerald",
   "side-income": "amber",
   savings: "sky",
@@ -84,11 +87,15 @@ const entryTones: Record<EntryKind, string> = {
 
 const entrySelectedBorders: Record<EntryKind, string> = {
   expense: "border-rose-400/60",
+  income: "border-violet-400/60",
   salary: "border-emerald-400/60",
   "side-income": "border-amber-400/60",
   savings: "border-sky-400/60",
   "stock-order": "border-violet-400/60",
 };
+
+/** 주식 주문은 더 이상 새로 만들 수 없고, 기존 기록을 수정할 때만 유형으로 남는다. */
+const entryKindOptions: EntryKind[] = ["expense", "income", "salary", "side-income", "savings"];
 
 const assetStatusLabels: Record<AssetStatus, string> = {
   active: "운영 중",
@@ -479,7 +486,7 @@ function EntryModal({
           <fieldset>
             <legend className="text-xs font-medium text-body">기록 유형</legend>
             <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
-              {(Object.keys(entryLabels) as EntryKind[]).map((kind) => {
+              {(draft.kind === "stock-order" ? [...entryKindOptions, "stock-order" as EntryKind] : entryKindOptions).map((kind) => {
                 const selected = draft.kind === kind;
                 return (
                   <button
@@ -514,6 +521,8 @@ function EntryModal({
                 placeholder={
                   draft.kind === "expense"
                     ? "예: 점심 식사"
+                    : draft.kind === "income"
+                    ? "예: 용돈"
                     : draft.kind === "salary"
                       ? "예: 월급"
                       : draft.kind === "side-income"
@@ -570,6 +579,19 @@ function EntryModal({
                 <div className="sm:col-span-2">
                   <FieldLabel htmlFor="entry-source">상점·출처</FieldLabel>
                   <input id="entry-source" value={draft.source} onChange={(event) => update("source", event.target.value)} className={fieldClass} placeholder="예: 동네 마트, 자동이체" />
+                </div>
+              </>
+            )}
+
+            {draft.kind === "income" && (
+              <>
+                <div>
+                  <FieldLabel htmlFor="income-source">수입원</FieldLabel>
+                  <input id="income-source" value={draft.source} onChange={(event) => update("source", event.target.value)} className={fieldClass} placeholder="예: 용돈, 환급" />
+                </div>
+                <div>
+                  <FieldLabel htmlFor="income-account">입금 계좌</FieldLabel>
+                  <input id="income-account" value={draft.account} onChange={(event) => update("account", event.target.value)} className={fieldClass} placeholder="예: 주거래 통장" />
                 </div>
               </>
             )}
@@ -1004,7 +1026,7 @@ function OverviewPanel({
   onOpenDetail: (record: FinanceRecord) => void;
 }) {
   const sumIncome = (items: FinanceRecord[]) =>
-    items.filter((record) => ["salary", "side-income"].includes(record.kind)).reduce((sum, record) => sum + record.amount, 0);
+    items.filter((record) => ["salary", "side-income", "income"].includes(record.kind)).reduce((sum, record) => sum + record.amount, 0);
   const sumExpense = (items: FinanceRecord[]) =>
     items.filter((record) => record.kind === "expense").reduce((sum, record) => sum + record.amount, 0);
   const monthRecords = records.filter((record) => record.date.startsWith(month));
@@ -1058,7 +1080,7 @@ function OverviewPanel({
         <section className="rounded-3xl border border-line bg-card p-5 sm:p-6">
           <SectionHeading eyebrow="Quick start" title="빠른 기록" />
           <div className="mt-5 grid grid-cols-2 gap-2">
-            {(["expense", "salary", "side-income", "savings"] as EntryKind[]).map((kind) => <button key={kind} type="button" onClick={() => onAdd(kind)} className="group flex items-center gap-3 rounded-3xl border border-line bg-card-soft px-3 py-3 text-left transition hover:border-line-strong hover:bg-card-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"><span className={`flex h-8 w-8 items-center justify-center rounded-2xl ${toneClasses(entryTones[kind], true)}`}><Icon name={entryIcons[kind]} size={16} /></span><span className="min-w-0"><span className="block truncate text-xs font-medium text-body">{entryLabels[kind]}</span><span className="mt-0.5 block text-[10px] text-faint">바로 입력</span></span></button>)}
+            {entryKindOptions.map((kind) => <button key={kind} type="button" onClick={() => onAdd(kind)} className="group flex items-center gap-3 rounded-3xl border border-line bg-card-soft px-3 py-3 last:col-span-2 text-left transition hover:border-line-strong hover:bg-card-strong focus:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"><span className={`flex h-8 w-8 items-center justify-center rounded-2xl ${toneClasses(entryTones[kind], true)}`}><Icon name={entryIcons[kind]} size={16} /></span><span className="min-w-0"><span className="block truncate text-xs font-medium text-body">{entryLabels[kind]}</span><span className="mt-0.5 block text-[10px] text-faint">바로 입력</span></span></button>)}
           </div>
           <div className="mt-5 border-t border-line pt-5"><button type="button" onClick={onOpenImport} className="flex w-full items-center gap-3 rounded-3xl border border-sky-400/20 bg-sky-500/[0.05] px-4 py-3 text-left transition hover:bg-sky-500/[0.1] focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"><span className="flex h-8 w-8 items-center justify-center rounded-2xl bg-sky-500/10 text-sky-200"><Icon name="upload" size={16} /></span><span><span className="block text-xs font-medium text-sky-100">엑셀에서 가져오기</span><span className="mt-0.5 block text-[10px] text-faint">기존 기록을 한 번에 추가</span></span><Icon name="chevron-right" size={15} className="ml-auto text-sky-300/60" /></button></div>
         </section>
@@ -1101,7 +1123,7 @@ function TransactionsPanel({
   const [kind, setKind] = useState<"all" | EntryKind>("all");
   const [source, setSource] = useState("전체 출처");
   const [query, setQuery] = useState("");
-  const transactionKinds: EntryKind[] = ["expense", "salary", "side-income"];
+  const transactionKinds: EntryKind[] = ["expense", "income", "salary", "side-income"];
   const transactionRecords = records.filter((record) => transactionKinds.includes(record.kind));
   const sourceOptions = ["전체 출처", ...new Set(transactionRecords.map(record => record.source).filter((value): value is string => Boolean(value)))];
   const visible = transactionRecords.filter((record) => {
@@ -1551,7 +1573,7 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
   const records = useMemo<FinanceRecord[]>(() => {
     const transactionRecords: FinanceRecord[] = transactions.map((transaction) => {
       const incomeSource = transaction.incomeDetails?.source;
-      const kind: EntryKind = transaction.type === "expense" ? "expense" : incomeSource === "salary" ? "salary" : incomeSource === "side-income" ? "side-income" : "side-income";
+      const kind: EntryKind = transaction.type === "expense" ? "expense" : incomeSource === "salary" ? "salary" : incomeSource === "side-income" ? "side-income" : "income";
       return {
         id: transaction.id,
         kind,
@@ -1696,7 +1718,7 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
           id,
           source: sourceOf(existingTransaction),
           type: isExpense ? "expense" : "income",
-          category: isExpense ? draft.category : draft.kind === "salary" ? "급여" : "부수입",
+          category: isExpense ? draft.category : draft.kind === "salary" ? "급여" : draft.kind === "side-income" ? "부수입" : "수입",
           amount,
           memo: draft.title.trim() || entryLabels[draft.kind],
           date: draft.date,
@@ -1707,9 +1729,9 @@ function Dashboard({ demo = false }: { demo?: boolean }) {
                 workItemId: draft.workItemId || undefined,
                 incomeDetails: {
                   ...existingTransaction?.incomeDetails,
-                  source: draft.kind === "salary" ? "salary" : "side-income",
+                  source: draft.kind === "salary" ? "salary" : draft.kind === "side-income" ? "side-income" : "other",
                   employer: draft.kind === "salary" ? draft.source.trim() || undefined : undefined,
-                  payer: draft.kind === "side-income" ? draft.source.trim() || undefined : undefined,
+                  payer: draft.kind === "salary" ? undefined : draft.source.trim() || undefined,
                   netAmount: draft.kind === "salary" ? amount : undefined,
                   count: draft.kind === "side-income" && draft.count ? Number(draft.count) : undefined,
                   month: draft.payMonth || undefined,

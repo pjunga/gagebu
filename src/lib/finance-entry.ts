@@ -3,6 +3,7 @@ import { addMonths, localDate, type AssetStatus } from "./finance-display";
 
 export type EntryKind =
   | "expense"
+  | "income"
   | "salary"
   | "side-income"
   | "savings"
