@@ -110,10 +110,11 @@ export default function AuthGate({ children }: { children: ReactNode }) {
         ticket += 1;
         probedUid = null;
         handlingUser = false;
-        // Signing a refused account out fires this listener again. Keep the
-        // refusal on screen instead of letting it blank the reason.
+        // Signing a refused account out fires this listener again, and a
+        // failed redirect can land either side of it. Whoever put a reason on
+        // screen keeps it; the next sign-in attempt clears it deliberately.
         setState((previous) =>
-          previous.status === "signed-out" && previous.message === NO_ACCESS_MESSAGE
+          previous.status === "signed-out" && previous.message
             ? previous
             : { status: "signed-out" },
         );
