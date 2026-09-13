@@ -84,6 +84,9 @@ test("zero balance survives unchanged save and closing/reopening; foreign inputs
   await page.getByRole("button", { name: "수정", exact: true }).click();
   await expect(page.getByLabel("주문 단가 (USD)")).toHaveValue("210");
   await expect(page.getByRole("dialog")).toContainText("$420.00");
+  // 다른 유형을 눌러봐도 주식 주문 버튼은 남아 있어 되돌릴 수 있다
+  await page.getByRole("dialog").getByRole("button", { name: "수입", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "주식 주문", exact: true }).click();
   await page.getByRole("button", { name: "변경 저장", exact: true }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect((await stored(page, "stockOrders")).find(item => item.id === "usd")).toMatchObject({ currency: "USD", fee: 1.5, totalAmount: 420 });
@@ -280,4 +283,25 @@ test("XLSX preview shows sample rows and row/sheet warnings; repeat import skips
   await page.getByRole("button", { name: "확인 후 저장" }).click();
   await expect(page.getByRole("dialog")).toHaveCount(0);
   expect(await stored(page, "transactions")).toHaveLength(1);
+});
+
+test("수입 유형은 저장·재조회되고 주식 주문은 새로 만들 수 없다", async ({ page }) => {
+  await load(page);
+  await page.locator("header").getByRole("button", { name: "새 내역", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByRole("button", { name: "주식 주문", exact: true })).toHaveCount(0);
+  await dialog.getByRole("button", { name: "수입", exact: true }).click();
+  await page.getByLabel("내역 이름").fill("용돈 받음");
+  await page.locator("#entry-amount").fill("50000");
+  await page.getByLabel("수입원").fill("부모님");
+  await page.getByRole("button", { name: "내역 저장", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  const records = await stored(page, "transactions");
+  expect(records).toHaveLength(1);
+  expect(records[0]).toMatchObject({ type: "income", category: "수입", amount: 50_000 });
+  expect(records[0].incomeDetails).toMatchObject({ source: "other", payer: "부모님" });
+  await page.reload();
+  await nav(page, "수입·지출");
+  await page.getByRole("button", { name: "용돈 받음 상세 보기" }).click();
+  await expect(page.getByRole("dialog")).toContainText("수입");
 });
