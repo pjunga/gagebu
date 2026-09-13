@@ -98,6 +98,9 @@ export default function AuthGate({ children }: { children: ReactNode }) {
     // already decided is not probed a second time.
     let ticket = 0;
     let probedUid: string | null = null;
+    // Whether a signed-in account has taken over the screen. The redirect
+    // handler below reports its own failure only while nothing has.
+    let handlingUser = false;
 
     // Firestore, not a bundled list, decides who gets in. The probe runs after
     // sign-in because the rules answer for an authenticated caller only.
@@ -106,6 +109,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       if (!isGoogleFirebaseUser(user)) {
         ticket += 1;
         probedUid = null;
+        handlingUser = false;
         // Signing a refused account out fires this listener again. Keep the
         // refusal on screen instead of letting it blank the reason.
         setState((previous) =>
@@ -119,6 +123,7 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       // probe already running for this account and leave the gate checking.
       if (probedUid === user.uid) return;
       probedUid = user.uid;
+      handlingUser = true;
       const mine = ++ticket;
       const current = () => active && ticket === mine;
       setState({ status: "checking" });
@@ -126,12 +131,18 @@ export default function AuthGate({ children }: { children: ReactNode }) {
       if (!current()) return;
       if (access === "refused") {
         probedUid = null;
+        handlingUser = false;
         setState({ status: "signed-out", message: NO_ACCESS_MESSAGE });
         void signOut(firebaseAuth).catch(() => {});
         return;
       }
       // "unreachable" keeps the session: the rules, not this probe, are the
-      // boundary, and the dashboard reports whatever error it runs into.
+      // boundary, and the dashboard reports whatever error it runs into. The
+      // account is left unprobed so a later report asks again rather than
+      // carrying one failed read for the rest of the session.
+      // ponytail: no retry on reconnect; add one if the shell proves confusing
+      // to sit in while every request comes back permission-denied.
+      if (access === "unreachable") probedUid = null;
       setState({ status: "allowed", user });
     };
 
@@ -144,7 +155,9 @@ export default function AuthGate({ children }: { children: ReactNode }) {
         const redirectResult = await getRedirectResult(firebaseAuth);
         if (redirectResult) await applyUser(redirectResult.user);
       } catch (error) {
-        if (!active) return;
+        // A signed-in account already owns the screen, so a redirect that
+        // failed on the side must not push it back to the login form.
+        if (!active || handlingUser) return;
         setState({
           status: "signed-out",
           message: friendlyAuthError(error),
